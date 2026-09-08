@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: cryptotrace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cryptotrace
+      POSTGRES_USER: cryptotrace
+      POSTGRES_PASSWORD: cryptotrace
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  neo4j:
+    image: neo4j:5
+    container_name: cryptotrace-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/change_me
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:

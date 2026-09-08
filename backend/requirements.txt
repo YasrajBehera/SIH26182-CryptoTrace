@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+python-dotenv
+psycopg[binary]
+sqlalchemy
+neo4j
+httpx
+pytest
