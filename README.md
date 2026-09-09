@@ -6,6 +6,13 @@ Explainable cross-chain VASP attribution and blockchain investigation platform f
 
 Wallet address -> API -> normalized transaction placeholder -> investigation-ready JSON response.
 
+## Docs
+
+- `docs/ARCHITECTURE.md` — high-level architecture
+- `docs/API_CONTRACTS.md` — API contracts
+- `docs/GRAPH_ENGINE.md` — Graph & Transaction Analysis module
+- `docs/TEAM.md` — team responsibilities
+
 ## Team branches
 
 - feature/blockchain-ingestion

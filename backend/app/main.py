@@ -1,11 +1,32 @@
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+from graph.api import close_driver, router as graph_router
+from graph.db_loader import GraphLoadError
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    close_driver()
+
 
 app = FastAPI(
     title="CryptoTrace API",
     version="0.1.0",
     description="SIH26182 blockchain investigation and VASP attribution API",
+    lifespan=lifespan,
 )
+
+app.include_router(graph_router)
+
+
+@app.exception_handler(GraphLoadError)
+async def graph_load_error_handler(request: Request, exc: GraphLoadError):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 class WalletRequest(BaseModel):
