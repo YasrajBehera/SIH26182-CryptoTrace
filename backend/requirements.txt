@@ -6,4 +6,5 @@ psycopg[binary]
 sqlalchemy
 neo4j
 httpx
+eth-hash[pycryptodome]
 pytest
