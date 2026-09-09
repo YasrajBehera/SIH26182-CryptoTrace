@@ -18,6 +18,7 @@ services:
     restart: unless-stopped
     environment:
       NEO4J_AUTH: neo4j/change_me
+      NEO4J_PLUGINS: '["graph-data-science"]'
     ports:
       - "7474:7474"
       - "7687:7687"
