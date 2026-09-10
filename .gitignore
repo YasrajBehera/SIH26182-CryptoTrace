@@ -26,3 +26,4 @@ Thumbs.db
 *.log
 data/raw/*
 !data/raw/.gitkeep
+frontend/tsconfig.tsbuildinfo
