@@ -69,3 +69,145 @@ pre {
   padding: 16px;
   border-radius: 8px;
 }
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #687580;
+}
+
+.summary-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #17202a;
+}
+
+.mono {
+  font-family: "SF Mono", "Consolas", "Menlo", monospace;
+  font-size: 13px;
+}
+
+.truncated-notice {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #6d4c00;
+}
+
+.empty-state {
+  margin-top: 16px;
+  color: #687580;
+  font-style: italic;
+}
+
+.transfer-table-wrap {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+
+.transfer-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.transfer-table th {
+  text-align: left;
+  padding: 10px 12px;
+  background: #f4f6f8;
+  border-bottom: 2px solid #dfe4e8;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5f6b76;
+  white-space: nowrap;
+}
+
+.transfer-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef1f4;
+  white-space: nowrap;
+}
+
+.transfer-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-in {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.badge-out {
+  background: #fce4ec;
+  color: #c62828;
+}
+
+.graph-meta {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #5f6b76;
+}
+
+.network-svg {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  margin: 16px auto 0;
+}
+
+.graph-node-label {
+  font-size: 10px;
+  fill: #17202a;
+  font-family: "SF Mono", "Consolas", "Menlo", monospace;
+}
+
+.graph-center-label {
+  font-size: 10px;
+  fill: #17202a;
+  font-weight: 700;
+  font-family: "SF Mono", "Consolas", "Menlo", monospace;
+}
+
+.graph-depth-label {
+  font-size: 9px;
+  fill: #687580;
+}
+
+.graph-empty {
+  margin-top: 16px;
+  color: #687580;
+  font-style: italic;
+}
