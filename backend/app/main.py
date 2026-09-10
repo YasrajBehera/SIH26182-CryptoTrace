@@ -4,8 +4,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from attribution.api import router as attribution_router
+from evidence.api import router as evidence_router
 from graph.api import close_driver, router as graph_router
 from graph.db_loader import GraphLoadError
+from intelligence.api import router as intelligence_router
+from pipeline.api import router as pipeline_router
 
 
 @asynccontextmanager
@@ -42,6 +46,10 @@ app = FastAPI(
 )
 
 app.include_router(graph_router)
+app.include_router(intelligence_router)
+app.include_router(attribution_router)
+app.include_router(evidence_router)
+app.include_router(pipeline_router)
 
 
 @app.exception_handler(GraphLoadError)
@@ -100,11 +108,11 @@ async def get_wallet_transfers(
 
 @app.post("/api/v1/investigations")
 def create_investigation(request: WalletRequest):
-    # Kept for backward compatibility. Wallet transfer ingestion is provided by
-    # GET /api/v1/wallets/{address}/transfers.
     return {
         "wallet": request.address,
-        "status": "created",
-        "transactions": [],
-        "message": "Use GET /api/v1/wallets/{address}/transfers for blockchain ingestion.",
+        "status": "redirect",
+        "message": (
+            "Use POST /api/v1/investigations/{address}/analyze for "
+            "the full pipeline analysis."
+        ),
     }
