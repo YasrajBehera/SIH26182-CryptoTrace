@@ -68,9 +68,12 @@ class TransactionGraph:
             return
 
         block_timestamp = self._field(tx, "block_timestamp")
-        timestamp = (
-            int(block_timestamp.timestamp()) if block_timestamp else 0
-        )
+        if block_timestamp is None:
+            timestamp = 0
+        elif isinstance(block_timestamp, int):
+            timestamp = block_timestamp
+        else:
+            timestamp = int(block_timestamp.timestamp())
         self.add_edge(
             chain=chain,
             tx_hash=tx_hash,
