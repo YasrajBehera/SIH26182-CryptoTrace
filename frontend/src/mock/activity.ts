@@ -1,0 +1,151 @@
+import type { ActivityEvent, WalletSummary } from "@/api/types";
+
+/**
+ * SYNTHETIC ACTIVITY + WALLET SUMMARIES — demo only.
+ */
+
+const now = Date.now();
+const h = 3600_000;
+
+export const demoActivity: ActivityEvent[] = [
+  {
+    id: "a-1",
+    at: new Date(now - 18 * 60_000).toISOString(),
+    actor: "Rohan Iyer",
+    action: "evidence_attached",
+    caseId: "CT-2026-0142",
+    caseName: "Phishing Sweep — Staking Pool Impersonation",
+    severity: "info",
+    detail: "Evidence E-021 (blockchain_transaction) attached",
+    isDemo: true,
+  },
+  {
+    id: "a-2",
+    at: new Date(now - 52 * 60_000).toISOString(),
+    actor: "system",
+    action: "risk_changed",
+    caseId: "CT-2026-0141",
+    caseName: "Bridge Exit Tracer — Layer2 Consolidation",
+    severity: "critical",
+    detail: "Risk escalated: high → critical",
+    isDemo: true,
+  },
+  {
+    id: "a-3",
+    at: new Date(now - 2 * h).toISOString(),
+    actor: "Meera Nair",
+    action: "vasp_candidate",
+    caseId: "CT-2026-0142",
+    caseName: "Phishing Sweep — Staking Pool Impersonation",
+    severity: "warning",
+    detail: "Candidate generated: StakingPool.io (medium confidence)",
+    isDemo: true,
+  },
+  {
+    id: "a-4",
+    at: new Date(now - 4 * h).toISOString(),
+    actor: "system",
+    action: "transaction_imported",
+    caseId: "CT-2026-0141",
+    caseName: "Bridge Exit Tracer — Layer2 Consolidation",
+    severity: "info",
+    detail: "342 transfers normalized from 0x7c5b…4b13",
+    isDemo: true,
+  },
+  {
+    id: "a-5",
+    at: new Date(now - 7 * h).toISOString(),
+    actor: "Rohan Iyer",
+    action: "graph_requested",
+    caseId: "CT-2026-0141",
+    caseName: "Bridge Exit Tracer — Layer2 Consolidation",
+    severity: "info",
+    detail: "Path analysis depth 4 requested",
+    isDemo: true,
+  },
+  {
+    id: "a-6",
+    at: new Date(now - 11 * h).toISOString(),
+    actor: "Kabir Shah",
+    action: "report_generated",
+    caseId: "CT-2026-0131",
+    caseName: "NFT Rugpull Reconnaissance",
+    severity: "info",
+    detail: "Report CT-RPT-0131 generated (11 sections)",
+    isDemo: true,
+  },
+  {
+    id: "a-7",
+    at: new Date(now - 26 * h).toISOString(),
+    actor: "system",
+    action: "wallet_investigated",
+    caseId: "CT-2026-0137",
+    caseName: "Ransomware Payment Trail",
+    severity: "warning",
+    detail: "618 transfers normalized; candidate exit detected",
+    isDemo: true,
+  },
+];
+
+export const demoWalletSummaries: Record<string, WalletSummary> = {
+  "0x7c5bd5c9cde06b8c998a6a66dbdc2e9e8e2f4b13": {
+    address: "0x7c5bd5c9cde06b8c998a6a66dbdc2e9e8e2f4b13",
+    network: "eth",
+    firstSeen: new Date(now - 400 * 24 * h).toISOString(),
+    lastActivity: new Date(now - 90 * 60_000).toISOString(),
+    transactionCount: 342,
+    incomingVolume: "842000",
+    outgoingVolume: "811500",
+    balance: null,
+    risk: "high",
+    riskScore: 78,
+    investigationStatus: "investigating",
+    isDemo: true,
+  },
+  "0xa1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4": {
+    address: "0xa1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4",
+    network: "eth",
+    firstSeen: new Date(now - 90 * 24 * h).toISOString(),
+    lastActivity: new Date(now - 12 * 60_000).toISOString(),
+    transactionCount: 1281,
+    incomingVolume: "12420000",
+    outgoingVolume: "12090000",
+    balance: "330000",
+    risk: "critical",
+    riskScore: 94,
+    investigationStatus: "escalated",
+    isDemo: true,
+  },
+  "0xdeadbeef00112233445566778899aabbccddeeff": {
+    address: "0xdeadbeef00112233445566778899aabbccddeeff",
+    network: "eth",
+    firstSeen: new Date(now - 30 * 24 * h).toISOString(),
+    lastActivity: new Date(now - 3 * h).toISOString(),
+    transactionCount: 618,
+    incomingVolume: "505000",
+    outgoingVolume: "498000",
+    balance: null,
+    risk: "critical",
+    riskScore: 91,
+    investigationStatus: "open",
+    isDemo: true,
+  },
+  "0x98f76a1b2c3d4e5f60718293a4b5c6d7e8f9a0b10": {
+    address: "0x98f76a1b2c3d4e5f60718293a4b5c6d7e8f9a0b10",
+    network: "eth",
+    firstSeen: new Date(now - 120 * 24 * h).toISOString(),
+    lastActivity: new Date(now - 5 * 24 * h).toISOString(),
+    transactionCount: 89,
+    incomingVolume: "95000",
+    outgoingVolume: "94000",
+    balance: null,
+    risk: "medium",
+    riskScore: 54,
+    investigationStatus: "review",
+    isDemo: true,
+  },
+};
+
+export function getDemoWalletSummary(address: string): WalletSummary | null {
+  return demoWalletSummaries[address.toLowerCase()] ?? null;
+}

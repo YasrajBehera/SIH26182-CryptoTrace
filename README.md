@@ -122,10 +122,33 @@ python -m pytest
 
 ## Run frontend
 
+Requirements: Node 20+. Run from `frontend/` (PowerShell may block `npm.ps1` —
+use `npm.cmd`).
+
 ```powershell
 cd frontend
-npm install
-npm run dev
+npm.cmd install
+npm.cmd run dev
+```
+
+Open http://localhost:5173
+
+- The dev server proxies `/api` to the FastAPI backend
+  (`http://127.0.0.1:8000`); no backend keys are exposed to the browser.
+- If the backend is unreachable the app auto-negotiates **demo mode** and
+  clearly labels every synthetic record. Sign in with any demo account
+  (password `cryptotrace-demo`): `admin`, `investigator`, `analyst`, `reviewer`,
+  `readonly`.
+- Frontend docs (capabilities, MOCKED vs IMPLEMENTED matrix, scripts,
+  architecture): `docs/FRONTEND.md`.
+
+### Frontend checks
+
+```powershell
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd test
+npm.cmd run build
 ```
 
 ## Git workflow
