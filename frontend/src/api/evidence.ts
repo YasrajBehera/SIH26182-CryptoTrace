@@ -1,8 +1,15 @@
+import { client } from "./client";
 import { isDemoMode } from "./config";
 import { getDemoEvidence, getDemoProvenance, getDemoAuditEvents } from "@/mock";
-import type { AuditEvent, EvidenceItem, ProvenanceLink } from "./types";
+import { mapBackendEvidenceToItem } from "./analysis";
+import type { AuditEvent, BackendEvidenceRecord, EvidenceItem, ProvenanceLink } from "./types";
 
-/** Evidence workspace contract. WAITING FOR MEMBER 3 backend. */
+/**
+ * Evidence workspace contract.
+ *
+ * Live mode reads real evidence/provenance from the Member 3 evidence service:
+ *   GET /api/v1/evidence/address/{address}?chain=eth
+ */
 export const evidence = {
   async list(address?: string): Promise<EvidenceItem[]> {
     if (isDemoMode()) {
@@ -10,7 +17,12 @@ export const evidence = {
       if (address) return all.filter((e) => e.relatedWallet?.toLowerCase() === address.toLowerCase());
       return all;
     }
-    return [];
+    if (!address) return [];
+    const records = await client.get<BackendEvidenceRecord[]>(
+      `/api/v1/evidence/address/${encodeURIComponent(address.trim().toLowerCase())}`,
+      { query: { chain: "eth" } },
+    );
+    return records.map(mapBackendEvidenceToItem);
   },
 
   async delete(_id: string): Promise<void> {

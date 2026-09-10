@@ -1,3 +1,4 @@
+import { client } from "./client";
 import { isDemoMode } from "./config";
 import {
   demoActivity,
@@ -5,10 +6,15 @@ import {
   getDemoInvestigation,
   demoNotes,
   demoTimeline,
+  getDemoInvestigationAnalysis,
 } from "@/mock";
+import { mapBackendEvidenceToItem, mapInvestigationResult } from "./analysis";
 import type {
   ActivityEvent,
+  BackendEvidenceRecord,
+  BackendInvestigationResult,
   Investigation,
+  InvestigationAnalysis,
   InvestigationNote,
   InvestigationTimelineEvent,
 } from "./types";
@@ -16,9 +22,12 @@ import type {
 /**
  * Investigation management.
  *
- * The backend only exposes a legacy POST /api/v1/investigations stub today.
- * Persistence is WAITING FOR BACKEND SUPPORT; wrapped in a clean adapter so
- * Member 1 (or a later member) can swap in a real store.
+ * `analyze()` drives the full live pipeline:
+ *   POST /api/v1/investigations/{address}/analyze -> graph + attribution + evidence ids,
+ *   GET  /api/v1/evidence/attribution/{analysis_id} -> evidence/provenance detail.
+ *
+ * Case persistence (list/get/create) is WAITING FOR BACKEND SUPPORT; those
+ * adapters return demo data in demo mode and an empty list in live mode.
  */
 export const investigations = {
   async list(): Promise<Investigation[]> {
@@ -30,6 +39,44 @@ export const investigations = {
   async get(id: string): Promise<Investigation | null> {
     if (isDemoMode()) return getDemoInvestigation(id) ?? null;
     return null;
+  },
+
+  /**
+   * Run the backend investigation pipeline for a public wallet address.
+   * Returns candidates ranked by attribution score plus evidence/provenance.
+   */
+  async analyze(address: string, chain = "eth"): Promise<InvestigationAnalysis> {
+    const trimmed = address.trim().toLowerCase();
+
+    if (isDemoMode()) {
+      return getDemoInvestigationAnalysis(trimmed);
+    }
+
+    const raw = await client.post<BackendInvestigationResult>(
+      `/api/v1/investigations/${encodeURIComponent(trimmed)}/analyze`,
+      undefined,
+      { query: { chain }, timeoutMs: 45000 },
+    );
+
+    let evidence: BackendEvidenceRecord[] = [];
+    if (raw.analysis_id) {
+      try {
+        evidence = await client.get<BackendEvidenceRecord[]>(
+          `/api/v1/evidence/attribution/${encodeURIComponent(raw.analysis_id)}`,
+          { timeoutMs: 15000 },
+        );
+      } catch {
+        // Evidence enrichment is best-effort; candidates still render.
+        evidence = [];
+      }
+    }
+
+    return mapInvestigationResult(raw, evidence, trimmed, chain);
+  },
+
+  /** Map backend evidence records to the frontend EvidenceItem shape. */
+  mapEvidence(records: BackendEvidenceRecord[]) {
+    return records.map(mapBackendEvidenceToItem);
   },
 
   async create(input: {

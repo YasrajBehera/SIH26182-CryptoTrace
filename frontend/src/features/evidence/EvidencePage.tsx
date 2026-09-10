@@ -129,7 +129,7 @@ export function EvidencePage() {
             <Button onClick={reload}>Retry</Button>
           </div>
         ) : !items?.length ? (
-          <EmptyState title="No evidence items" description={isDemo ? "Synthetic evidence is unavailable for this wallet." : "Evidence service (Member 3) is not connected."} />
+          <EmptyState title="No evidence items" description={isDemo ? "Synthetic evidence is unavailable for this wallet." : "The backend evidence service returned no records for this wallet."} />
         ) : (
           <div className="stack">
             {items.map((it) => (
