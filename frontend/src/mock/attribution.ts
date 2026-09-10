@@ -1,4 +1,5 @@
-import type { AttributionCandidate } from "@/api/types";
+import type { AttributionCandidate, InvestigationAnalysis } from "@/api/types";
+import { getDemoEvidence } from "./evidence";
 
 /**
  * SYNTHETIC ATTRIBUTION DATA — Member 3's attribution engine is not
@@ -121,4 +122,34 @@ export const demoCandidates: AttributionCandidate[] = [
 
 export function getDemoCandidates(): AttributionCandidate[] {
   return demoCandidates;
+}
+
+/**
+ * Labeled demo result for `investigations.analyze()` when the backend is
+ * unreachable (demo mode). Mirrors the live response schema so the analyzer
+ * UI can be exercised offline; every record is clearly marked synthetic.
+ */
+export function getDemoInvestigationAnalysis(address: string): InvestigationAnalysis {
+  const addr = address.trim().toLowerCase();
+  return {
+    address: addr,
+    chain: "eth",
+    transfersIngested: 30,
+    graphNodes: 9,
+    graphEdges: 9,
+    analysisId: null,
+    evidenceCount: getDemoEvidence().length,
+    disclaimer:
+      "This score is an analytical ranking heuristic. It is NOT proof of wallet ownership or VASP association.",
+    isDemo: true,
+    syntheticTransactions: true,
+    intelligence: null,
+    candidates: demoCandidates.map((c, i) => ({
+      ...c,
+      id: `demo-cand-${i}`,
+      wallet: addr,
+      isDemo: true,
+    })),
+    evidence: getDemoEvidence(),
+  };
 }

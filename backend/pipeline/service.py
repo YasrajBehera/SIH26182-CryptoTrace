@@ -1,19 +1,26 @@
 from typing import Optional
 
 from attribution.adapter import build_graph_data
+from attribution.api import get_attribution_service
 from attribution.models import AttributionRequest
 from attribution.service import AttributionService
 from graph.builder import TransactionGraph
 from graph.temporal import fund_flow as compute_fund_flow
 from graph.temporal import temporal_path as compute_temporal_path
-from intelligence.service import VASPIntelligenceService
 from pipeline.models import InvestigationRequest, InvestigationResult
 
 
 class InvestigationPipeline:
+    """Investigation pipeline that shares the app-wide attribution service.
+
+    Sharing the AttributionService singleton (and its EvidenceService) is
+    required so that evidence records created by POST .../analyze are actually
+    retrievable through the evidence service endpoints (GET /api/v1/evidence/*).
+    """
+
     def __init__(self) -> None:
-        self._intel = VASPIntelligenceService()
-        self._attr = AttributionService(vasp_intelligence=self._intel)
+        self._attr = get_attribution_service()
+        self._intel = self._attr.intelligence_service
 
     @property
     def attribution_service(self) -> AttributionService:

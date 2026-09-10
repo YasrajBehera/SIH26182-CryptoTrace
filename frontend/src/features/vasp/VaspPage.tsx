@@ -67,7 +67,7 @@ export function VaspPage() {
           description={
             isDemo
               ? "The synthetic adapter returned no candidates for this wallet. Try removing the wallet filter."
-              : "Attribution requires the Member 3 intelligence engine, which is not connected yet."
+              : "No attribution candidates were returned by the backend pipeline for this wallet."
           }
         />
       ) : (

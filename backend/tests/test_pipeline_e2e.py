@@ -185,6 +185,35 @@ class TestPipelineAPIEndpoint:
         assert len(data["candidates"]) > 0
         assert data["evidence_count"] >= 0
 
+    def test_analyze_evidence_retrievable_via_evidence_api(self, app_client):
+        """Analyze advertises evidence_ids; the evidence endpoints MUST return them.
+
+        Regression: the pipeline previously stored evidence in a private
+        EvidenceService, so GET /api/v1/evidence/* could never resolve the ids
+        returned by POST /api/v1/investigations/{address}/analyze.
+        """
+        resp = app_client.post(
+            "/api/v1/investigations/0xaabb000000000000000000000000000000000001/analyze",
+            params={"chain": "eth"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["evidence_count"] > 0
+        assert len(data["candidates"]) > 0
+
+        attr_id = data["analysis_id"]
+        resp2 = app_client.get(f"/api/v1/evidence/attribution/{attr_id}")
+        assert resp2.status_code == 200
+        by_attr = resp2.json()
+        assert len(by_attr) == data["evidence_count"]
+
+        resp3 = app_client.get(
+            "/api/v1/evidence/address/0xaabb000000000000000000000000000000000001",
+            params={"chain": "eth"},
+        )
+        assert resp3.status_code == 200
+        assert len(resp3.json()) > 0
+
     def test_legacy_stub_still_works(self, app_client):
         resp = app_client.post(
             "/api/v1/investigations",

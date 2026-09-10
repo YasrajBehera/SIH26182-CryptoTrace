@@ -6,9 +6,10 @@
  * (GET /api/v1/wallets/{address}/transfers). Do not change them without
  * coordinating with the backend team (see docs/API_CONTRACTS.md).
  *
- * Contracts for graph (Member 2) and intelligence/attribution (Member 3) are
- * forward-looking integration interfaces. Until those backends ship, data is
- * served by transparent mock adapters that flag every record as synthetic.
+ * The `Backend*` shapes mirror the live investigation pipeline API
+ * (POST /api/v1/investigations/{address}/analyze) and the Member 3 evidence
+ * API (GET /api/v1/evidence/...).  View models (`InvestigationAnalysis`, …)
+ * are frontend-facing and are produced by the mappers in api/analysis.ts.
  */
 
 /* ---- Member 1: blockchain ingestion (LIVE contract) ---- */
@@ -236,7 +237,12 @@ export type EvidenceType =
   | "document"
   | "external_source"
   | "analyst_note"
-  | "system_observation";
+  | "system_observation"
+  | "graph_proximity"
+  | "known_address_match"
+  | "temporal_consistency"
+  | "transaction_flow"
+  | "cluster_evidence";
 
 export type ReliabilityLevel = "verified" | "high" | "medium" | "low";
 
@@ -261,6 +267,125 @@ export interface ProvenanceLink {
   label: string;
   sublabel?: string;
   kind: "candidate" | "evidence" | "transaction" | "wallet" | "source";
+}
+
+/* ---- Investigation pipeline API (LIVE backend contract, Member 3) ---- */
+
+/** Serialized backend confidence: POST /api/v1/investigations/{address}/analyze */
+export type BackendConfidence = "HIGH" | "MEDIUM" | "LOW";
+
+export interface BackendScoreBreakdown {
+  graph_proximity: number;
+  known_address_match: number;
+  temporal_consistency: number;
+  transaction_flow: number;
+  cluster_evidence: number;
+}
+
+export interface BackendAttributionCandidate {
+  address: string;
+  chain: string;
+  vasp_name: string;
+  /** Attribution score 0–100. Analytical ranking heuristic, not ownership proof. */
+  score: number;
+  confidence: BackendConfidence;
+  evidence_ids: string[];
+  score_breakdown: BackendScoreBreakdown;
+  explanation: string[];
+}
+
+export interface BackendVaspMatch {
+  address: string;
+  chain: string;
+  vasp_name: string;
+  address_type: string;
+  source: string;
+  verification_status: "verified" | "unverified" | "disputed" | string;
+  confidence: number;
+}
+
+export interface BackendAddressIntelligence {
+  address: string;
+  chain: string;
+  known_vasp: string | null;
+  address_type: string | null;
+  entity_type: string | null;
+  jurisdiction: string | null;
+  verification_status: string | null;
+  confidence: number;
+  source: string | null;
+  is_known_vasp: boolean;
+  all_matches: BackendVaspMatch[];
+}
+
+export interface BackendEvidenceProvenance {
+  created_at: string;
+  created_by: string;
+  method: string;
+  version: string;
+}
+
+export interface BackendEvidenceRecord {
+  evidence_id: string;
+  attribution_id: string;
+  evidence_type: EvidenceType;
+  address: string;
+  chain: string;
+  tx_hash: string | null;
+  graph_path: string[] | null;
+  source: string;
+  timestamp: number | null;
+  /** Normalized 0–1 confidence backing this evidence record. */
+  confidence: number;
+  description: string;
+  provenance: BackendEvidenceProvenance;
+}
+
+export interface BackendInvestigationResult {
+  address: string;
+  chain: string;
+  transfers_ingested: number;
+  graph_nodes: number;
+  graph_edges: number;
+  address_intelligence: BackendAddressIntelligence | null;
+  candidates: BackendAttributionCandidate[];
+  analysis_id: string | null;
+  evidence_count: number;
+  disclaimer: string;
+}
+
+/* ---- Investigation analysis view model (frontend-facing) ---- */
+
+export interface AddressIntelligenceView {
+  address: string;
+  chain: string;
+  knownVasp: string | null;
+  addressType: string | null;
+  entityType: string | null;
+  jurisdiction: string | null;
+  verificationStatus: string | null;
+  confidence: number;
+  source: string | null;
+  isKnownVasp: boolean;
+  matchCount: number;
+}
+
+export interface InvestigationAnalysis {
+  address: string;
+  chain: string;
+  transfersIngested: number;
+  graphNodes: number;
+  graphEdges: number;
+  analysisId: string | null;
+  evidenceCount: number;
+  disclaimer: string;
+  /** True when the frontend synthesized a demo result (backend unreachable). */
+  isDemo: boolean;
+  /** True when the pipeline ran over synthetic transactions (backend default today). */
+  syntheticTransactions: boolean;
+  intelligence: AddressIntelligenceView | null;
+  candidates: AttributionCandidate[];
+  evidence: EvidenceItem[];
 }
 
 /* ---- Audit (roles/actions) ---- */

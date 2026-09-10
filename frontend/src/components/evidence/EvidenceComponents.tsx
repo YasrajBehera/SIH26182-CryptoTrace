@@ -10,6 +10,11 @@ const TYPE_LABEL: Record<EvidenceItem["type"], string> = {
   external_source: "External source",
   analyst_note: "Analyst note",
   system_observation: "System observation",
+  graph_proximity: "Graph proximity",
+  known_address_match: "Known-address match",
+  temporal_consistency: "Temporal consistency",
+  transaction_flow: "Transaction flow",
+  cluster_evidence: "Cluster evidence",
 };
 
 const RELIABILITY_CLASS: Record<EvidenceItem["reliability"], string> = {

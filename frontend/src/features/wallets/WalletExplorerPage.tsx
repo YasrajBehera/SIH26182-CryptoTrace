@@ -3,6 +3,7 @@ import { PageHeader, Button, Card, DemoBadge, ShortAddress, UnauthorizedState } 
 import { WalletIcon, AddIcon } from "@/components/icons";
 import { WalletQuickLook } from "@/components/wallets/WalletQuickLook";
 import { InvestigationWorkflow } from "@/components/investigations/InvestigationWorkflow";
+import { InvestigationAnalyzer } from "@/components/investigations/InvestigationAnalyzer";
 import { demoWallets } from "@/mock";
 import { useAuth } from "@/auth/AuthContext";
 
@@ -29,6 +30,14 @@ export function WalletExplorerPage() {
 
       <Card title="Investigate a wallet" subtitle="Uses the live Member 1 ingestion endpoint when reachable; otherwise labeled demo data.">
         <WalletQuickLook />
+      </Card>
+
+      <Card
+        title="VASP attribution analyzer"
+        subtitle="Runs POST /api/v1/investigations/{address}/analyze against the backend pipeline (graph → attribution → evidence)."
+        actions={<DemoBadge label="SYNTHETIC DATA" />}
+      >
+        <InvestigationAnalyzer />
       </Card>
 
       <Card title="Recent demo wallets" subtitle="Convenient synthetic addresses for trying the workflow (clearly marked DEMO)." actions={<DemoBadge />}>

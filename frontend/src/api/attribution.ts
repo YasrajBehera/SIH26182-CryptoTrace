@@ -1,14 +1,16 @@
 import { isDemoMode } from "./config";
 import { getDemoCandidates } from "@/mock";
+import { investigations } from "./investigations";
 import type { AttributionCandidate } from "./types";
 
 /**
  * VASP intelligence / attribution frontend contract.
  *
- * WAITING FOR MEMBER 3: the intelligence + attribution engine is not
- * implemented. The adapter returns labeled synthetic candidates. All language
- * in the UI must preserve the "candidate / potential association" nuance
- * mandated by the team (never claim verified ownership).
+ * Live mode runs the backend investigation pipeline
+ * (POST /api/v1/investigations/{address}/analyze) and maps its ranked
+ * candidates onto the shared AttributionCandidate shape. All language in the
+ * UI must preserve the "candidate / potential association" nuance mandated by
+ * the team (never claim verified ownership).
  */
 export const attribution = {
   async candidates(address?: string): Promise<AttributionCandidate[]> {
@@ -17,7 +19,9 @@ export const attribution = {
       if (address) return all.filter((c) => c.wallet.toLowerCase() === address.toLowerCase());
       return all;
     }
-    return [];
+    if (!address) return [];
+    const analysis = await investigations.analyze(address);
+    return analysis.candidates;
   },
 
   async get(id: string): Promise<AttributionCandidate | null> {
