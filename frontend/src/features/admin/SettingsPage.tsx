@@ -5,7 +5,7 @@ import { useToast } from "@/components/ui";
 import { useState } from "react";
 
 export function SettingsPage() {
-  const { can, role, user } = useAuth();
+  const { can, role, user, username } = useAuth();
   const { mode, backendReachable, checking, setMode } = useDataSource();
   const { push } = useToast();
   const [defaultNetwork, setDefaultNetwork] = useState("Ethereum");
@@ -104,7 +104,12 @@ export function SettingsPage() {
         <div className="stack">
           <div className="detail-row">
             <span className="detail-label">Signed in as</span>
-            <span className="detail-value">{user?.name ?? "No active session"}</span>
+            <span className="detail-value">
+              {username ?? "No active session"}
+              {user && user.name !== username ? (
+                <Badge className="status-draft" style={{ marginLeft: 8 }}>{user.name}</Badge>
+              ) : null}
+            </span>
           </div>
           <div className="detail-row">
             <span className="detail-label">Role</span>

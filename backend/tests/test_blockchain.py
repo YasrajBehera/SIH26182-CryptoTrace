@@ -9,9 +9,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
 from blockchain.alchemy_client import (
     AlchemyAPIError,
     AlchemyConfigError,
@@ -22,7 +20,10 @@ from blockchain.pagination import PaginationConfig
 from blockchain.service import BlockchainService
 from blockchain.validators import InvalidAddressError, is_valid_address, validate_address
 
-client = TestClient(app)
+
+@pytest.fixture
+def client(app_client):
+    return app_client
 
 VALID_ADDRESS = "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"
 VALID_LOWER = VALID_ADDRESS.lower()
@@ -219,6 +220,43 @@ class TestService:
         assert result.transfers == []
         assert result.pagination.fetched == 0
 
+    def test_malformed_rows_skipped_and_counted(self, service):
+        # Real provider feeds include records with no sender/receiver (e.g.
+        # contract-creation / mint rows). These must be skipped and counted,
+        # not fail the whole wallet query with a 500.
+        good = make_eth("0x1", VALID_LOWER)
+        bad = {
+            "hash": "0xbad",
+            "blockNum": "0x1",
+            "from": "",
+            "to": "",
+            "value": "1",
+            "asset": "ETH",
+            "category": "external",
+            "metadata": {"blockTimestamp": "2023-01-01T00:00:00Z"},
+        }
+        fake = FakeAlchemyClient(response_for={"to": [bad, good], "from": []})
+        result = _run(service, fake, VALID_ADDRESS)
+        assert len(result.transfers) == 1
+        assert result.transfers[0].transaction_hash == "0x1"
+        assert result.pagination.skipped == 1
+
+    def test_provider_value_dict_extracts_decimal(self, service):
+        # Alchemy returns `value` as {"hex": ..., "decimal": ...}; the decimal
+        # string must be surfaced verbatim rather than a dict repr.
+        row = make_eth("0x9", VALID_LOWER)
+        row["value"] = {"hex": "0xde0b6b3a7640000", "decimal": 1000000000000000000}
+        fake = FakeAlchemyClient(response_for={"to": [row], "from": []})
+        result = _run(service, fake, VALID_ADDRESS)
+        assert result.transfers[0].value == "1000000000000000000"
+
+    def test_provider_value_hex_only_falls_back_to_decimal(self, service):
+        row = make_eth("0xa", VALID_LOWER)
+        row["value"] = {"hex": "0xde0b6b3a7640000"}
+        fake = FakeAlchemyClient(response_for={"to": [row], "from": []})
+        result = _run(service, fake, VALID_ADDRESS)
+        assert result.transfers[0].value == "1000000000000000000"
+
     def test_limit_cap(self):
         svc = BlockchainService(pagination=PaginationConfig(max_transfers=1000))
         rows = [make_eth(f"0x{i}", VALID_LOWER) for i in range(5)]
@@ -321,26 +359,56 @@ class TestErrors:
 
             AlchemyClient(api_key="   ")
 
+    def test_non_json_provider_response_maps_to_api_error(self, monkeypatch):
+        # A 200 with an HTML/non-JSON body (e.g. an expired-key error page)
+        # must become AlchemyAPIError -> mapped to 502 by the route, never a 500.
+        import asyncio
+
+        from blockchain.alchemy_client import AlchemyClient
+
+        class FakeResponse:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                raise ValueError("expected json")
+
+        class FakeTransport:
+            @staticmethod
+            async def post(url, json):
+                return FakeResponse()
+
+            @staticmethod
+            async def aclose():
+                return None
+
+        monkeypatch.setattr(
+            AlchemyClient, "_get_client", lambda self: FakeTransport()
+        )
+        client = AlchemyClient(api_key="test")
+        with pytest.raises(AlchemyAPIError):
+            asyncio.run(client._rpc({"jsonrpc": "2.0", "params": []}))
+
 
 # --------------------------------------------------------------------------- #
 # FastAPI endpoints
 # --------------------------------------------------------------------------- #
 class TestEndpoints:
-    def test_health(self):
+    def test_health(self, client):
         resp = client.get("/api/v1/health")
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
-    def test_root(self):
+    def test_root(self, client):
         resp = client.get("/")
         assert resp.status_code == 200
         assert resp.json()["project"] == "SIH26182-CryptoTrace"
 
-    def test_invalid_address_returns_400(self):
+    def test_invalid_address_returns_400(self, client):
         resp = client.get("/api/v1/wallets/0x123/transfers")
         assert resp.status_code == 400
 
-    def test_transfers_returns_200(self, monkeypatch):
+    def test_transfers_returns_200(self, client, monkeypatch):
         from blockchain.service import BlockchainService
 
         async def fake_get(self, address, limit=None):
@@ -361,7 +429,7 @@ class TestEndpoints:
         assert body["wallet_address"] == VALID_LOWER
         assert body["transfers"] == []
 
-    def test_provider_error_returns_502(self, monkeypatch):
+    def test_provider_error_returns_502(self, client, monkeypatch):
         from blockchain.service import BlockchainService
 
         async def fake_get(self, address, limit=None):
@@ -371,7 +439,7 @@ class TestEndpoints:
         resp = client.get(f"/api/v1/wallets/{VALID_ADDRESS}/transfers")
         assert resp.status_code == 502
 
-    def test_unexpected_error_returns_500(self, monkeypatch):
+    def test_unexpected_error_returns_500(self, client, monkeypatch):
         from blockchain.service import BlockchainService
 
         async def fake_get(self, address, limit=None):

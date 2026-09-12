@@ -6,6 +6,7 @@ import { GraphNodePanel } from "@/components/graph/GraphNodePanel";
 import { FundFlowDiagram } from "@/components/graph/FundFlowDiagram";
 import { useApi } from "@/hooks/useApi";
 import { graph } from "@/api/graph";
+import { getDemoGraph, getDemoPath } from "@/mock";
 import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
 import type { GraphNode, GraphEdge } from "@/api/types";
@@ -42,19 +43,50 @@ export function GraphPage() {
 
   const validAddress = !address || validateAddressInput(address) === null;
 
+  // Honest provider detection: in live mode we probe the backend graph health
+  // endpoint once. Only when the backend reports Neo4j as reachable ("ok") do
+  // we label the page LIVE. Otherwise everything shown is synthetic.
+  const { data: graphHealth } = useApi(() => graph.health(), [], { enabled: !isDemo });
+  const provider = isDemo ? "synthetic" : graphHealth?.provider ?? "checking";
+
+  // A live backend whose Neo4j engine is unreachable still renders topology,
+  // but it is EXPLICITLY synthetic — never presented as live data.
+  const useSynthetic = isDemo || provider === "synthetic";
+
   const { data: graphData, loading, error, reload } = useApi(
     () =>
       validAddress && address
-        ? graph.query({ address, network: "ethereum", depth: Number(depth) || 2, timeRangeDays })
+        ? useSynthetic
+          ? Promise.resolve(getDemoGraph())
+          : graph.query({ address, network: "ethereum", depth: Number(depth) || 2, timeRangeDays })
         : Promise.reject(new Error("Enter a valid wallet address first.")),
-    [address, depth, timeRangeDays],
+    [address, depth, timeRangeDays, useSynthetic],
     { enabled: validAddress && !!address },
   );
 
-  const { data: flowPath } = useApi(
-    () => (validAddress && address ? graph.path(address, `${address.slice(0, 10)}_f`) : Promise.reject(new Error("Enter a wallet address."))),
-    [address],
-    { enabled: validAddress && !!address },
+  // Fund-flow destination: explicit `?to=` marks the path end. In synthetic
+  // mode we fall back to a labeled demo target so the flow tab still renders.
+  const toParam = params.get("to") ?? "";
+  const flowTarget = toParam || (useSynthetic ? `${address.slice(0, 10)}_f` : "");
+  const { data: flowPath, loading: flowLoading, error: flowError, reload: reloadFlow } = useApi(
+    () =>
+      validAddress && address && flowTarget
+        ? useSynthetic
+          ? Promise.resolve(getDemoPath())
+          : graph.path(address, flowTarget)
+        : Promise.reject(new Error("Add a destination (?to=...) to compute a fund-flow path.")),
+    [address, flowTarget, useSynthetic],
+    { enabled: validAddress && !!address && !!flowTarget },
+  );
+
+  const providerBadge = isDemo ? (
+    <DemoBadge label="SYNTHETIC GRAPH DATA" />
+  ) : provider === "neo4j" ? (
+    <Badge className="status-open">Live — Neo4j graph engine</Badge>
+  ) : provider === "checking" ? (
+    <Badge className="status-pending">Probing graph engine…</Badge>
+  ) : (
+    <Badge className="status-draft">Synthetic fallback — Neo4j unavailable</Badge>
   );
 
   const highlighted = useMemo(() => {
@@ -94,9 +126,13 @@ export function GraphPage() {
     <div className="page">
       <PageHeader
         title="Transaction Graph"
-        subtitle="Visualize wallet relationships and fund flows. Graph data is synthetic until the Member 2 graph engine ships."
+        subtitle={
+          provider === "neo4j"
+            ? "Visualize wallet relationships and fund flows against the live Neo4j graph engine."
+            : "Visualize wallet relationships and fund flows. The graph engine is not currently reachable, so synthetic topology is shown (never presented as live data)."
+        }
         crumbs={[{ label: "Transaction Graph" }]}
-        actions={isDemo ? <DemoBadge label="SYNTHETIC GRAPH DATA" /> : <Badge className="status-open">Live</Badge>}
+        actions={providerBadge}
       />
 
       <Card title="Graph query">
@@ -129,7 +165,9 @@ export function GraphPage() {
           </Button>
           {!isDemo ? (
             <span style={{ color: "var(--text-faint)", fontSize: "var(--text-xs)", alignSelf: "center" }}>
-              Graph engine (Member 2) is not reachable — live queries are unavailable.
+              {provider === "neo4j"
+                ? "Live graph engine queried on build via the backend graph API (Neo4j)."
+                : "Graph engine unreachable — queries are answered with labeled synthetic topology."}
             </span>
           ) : null}
         </form>
@@ -148,7 +186,7 @@ export function GraphPage() {
               title="Unable to build graph"
               description={
                 error ??
-                "Enter a valid wallet address on the Ethereum network to query the (synthetic today) graph adapter."
+                "Enter a valid wallet address on the Ethereum network. The graph engine is unavailable, so no topology data can be reconstructed."
               }
               action={address ? <Button onClick={reload}>Retry</Button> : undefined}
             />
@@ -166,7 +204,7 @@ export function GraphPage() {
                   testid="graph-canvas"
                 />
                 <div>
-                  <GraphNodePanel node={selectedNode ?? graphData.nodes[0]} edges={graphData.edges} demo={isDemo} />
+                  <GraphNodePanel node={selectedNode ?? graphData.nodes[0]} edges={graphData.edges} demo={useSynthetic} />
                   {selectedEdge ? (
                     <Card title="Selected edge" subtitle={`${selectedEdge.asset} flow`}>
                       <div className="stack">
@@ -194,15 +232,30 @@ export function GraphPage() {
           )}
         </Card>
       ) : (
-        <Card title="Discrete fund flow" subtitle="Synthetic path reconstruction. Not computed from live chain data.">
-          {flowPath ? (
-            <FundFlowDiagram
-              path={flowPath}
-              demo={isDemo}
-              onNodeClick={(n) => navigate(`/graph?address=${encodeURIComponent(n.address)}`)}
+        <Card
+          title="Discrete fund flow"
+          subtitle={
+            provider === "neo4j"
+              ? "Source-to-destination path and transfers reconstructed from the connected graph engine."
+              : "Synthetic path reconstruction. Not computed from live chain data — the graph engine is not connected."
+          }
+        >
+          {flowLoading ? (
+            <div style={{ height: 420 }}>
+              <LoadingBlock />
+            </div>
+          ) : flowError || !flowPath ? (
+            <ErrorState
+              title="Unable to compute fund flow"
+              description={flowError ?? "Enter a valid wallet address to trace a fund path."}
+              action={address && flowTarget ? <Button onClick={reloadFlow}>Retry</Button> : undefined}
             />
           ) : (
-            <LoadingBlock />
+            <FundFlowDiagram
+              path={flowPath}
+              demo={useSynthetic}
+              onNodeClick={(n) => navigate(`/graph?address=${encodeURIComponent(n.address)}`)}
+            />
           )}
         </Card>
       )}

@@ -36,9 +36,14 @@ MERGE (tx)-[r:RECEIVED {tx_id: $tx_id}]->(dst)
 SET r.amount = $value, r.timestamp = $block_timestamp, r.chain = $chain
 """
 
-BFS_QUERY = """
-MATCH (start:Wallet {wallet_id: $wallet_id})
-MATCH path = (start)-[*1..$max_depth]-(other:Wallet)
+# Neo4j 5 forbids bound parameters inside variable-length relationship patterns
+# (e.g. ``[*1..$max_depth]``). The depth is therefore injected as a *validated*
+# integer literal; ``wallet_id`` and ``max_nodes`` stay bound parameters.
+MAX_BFS_DEPTH = 50
+
+BFS_QUERY_TEMPLATE = """
+MATCH (start:Wallet {{wallet_id: $wallet_id}})
+MATCH path = (start)-[*1..{max_depth}]-(other:Wallet)
 WHERE other <> start
 RETURN other.wallet_id AS wallet_id,
        other.address AS address,
@@ -47,6 +52,24 @@ RETURN other.wallet_id AS wallet_id,
 ORDER BY depth, wallet_id
 LIMIT $max_nodes
 """
+
+
+def _validate_depth(max_depth: int, *, max_allowed: int = MAX_BFS_DEPTH) -> int:
+    """Coerce and bound max_depth before it is embedded in a Cypher query.
+
+    Inlining a raw value into the variable-length pattern would be a Cypher
+    injection vector, so only a validated, bounded integer is ever formatted
+    into ``BFS_QUERY_TEMPLATE``.
+    """
+    try:
+        depth = int(max_depth)
+    except (TypeError, ValueError):
+        raise ValueError(f"max_depth must be an integer, got {max_depth!r}") from None
+    if depth < 1:
+        raise ValueError(f"max_depth must be >= 1, got {depth}")
+    if depth > max_allowed:
+        raise ValueError(f"max_depth must be <= {max_allowed}, got {depth}")
+    return depth
 
 DFS_QUERY = """
 MATCH (start:Wallet {wallet_id: $wallet_id})
@@ -88,13 +111,13 @@ TEMPLATE_OUT_FLOW = """
 MATCH (wallet:Wallet {wallet_id: $wallet_id})
 MATCH (wallet)-[s:SENT]->(tx:Transaction)<-[r:RECEIVED]-(counterparty:Wallet)
 WHERE counterparty.wallet_id <> $wallet_id {where_clause}
-RETURN counterparty.wallet_id AS source,
+RETURN wallet.wallet_id AS source,
        tx.tx_id AS tx_id,
        tx.tx_hash AS tx_hash,
        tx.chain AS chain,
        tx.block_timestamp AS block_timestamp,
        s.amount AS amount,
-       wallet.wallet_id AS target
+       counterparty.wallet_id AS target
 LIMIT $max_results
 """
 
@@ -126,6 +149,18 @@ CLUSTER_PROCEDURES = {
     "louvain": "gds.louvain.stream",
     "leiden": "gds.leiden.stream",
 }
+
+
+def normalize_wallet_id(wallet_id: str) -> str:
+    """Canonicalize a wallet_id to lowercase chain:address.
+
+    All writers store ``chain:address`` via ``graph.schema.address_key`` (which
+    lowercases the address), but route parameters may arrive uppercase.
+    """
+    if ":" in wallet_id:
+        chain, address = wallet_id.split(":", 1)
+        return f"{chain.lower()}:{address.lower()}"
+    return wallet_id
 
 
 def sync_from_postgres(
@@ -185,11 +220,11 @@ def bfs(
     max_depth: int = 3,
     max_nodes: int = 100,
 ) -> List[Dict]:
+    query = BFS_QUERY_TEMPLATE.format(max_depth=_validate_depth(max_depth))
     with neo4j_session(driver) as session:
         records = session.run(
-            BFS_QUERY,
-            wallet_id=wallet_id,
-            max_depth=int(max_depth),
+            query,
+            wallet_id=normalize_wallet_id(wallet_id),
             max_nodes=int(max_nodes),
         )
         return [dict(record) for record in records]
@@ -284,7 +319,7 @@ def dfs(
     with neo4j_session(driver) as session:
         records = session.run(
             DFS_QUERY,
-            wallet_id=wallet_id,
+            wallet_id=normalize_wallet_id(wallet_id),
             max_depth=int(max_depth),
             max_nodes=int(max_nodes),
         )
@@ -370,7 +405,7 @@ def temporal_flow(
             query = template.replace("{where_clause}", where_clause)
             records = session.run(
                 query,
-                wallet_id=wallet_id,
+                wallet_id=normalize_wallet_id(wallet_id),
                 from_ts=from_ts,
                 to_ts=to_ts,
                 max_results=int(max_results),

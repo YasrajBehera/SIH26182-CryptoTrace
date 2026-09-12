@@ -114,6 +114,18 @@ export function DataTable<T>({
                   key={rowKey(row)}
                   className={onRowClick ? "clickable" : ""}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  tabIndex={onRowClick ? 0 : undefined}
+                  aria-label={onRowClick ? "Open row details" : undefined}
+                  onKeyDown={
+                    onRowClick
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onRowClick(row);
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   {columns.map((c) => (
                     <td key={c.key} className={c.align === "right" ? "num" : ""}>

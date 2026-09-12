@@ -3,13 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { PageHeader, Button, Card, Field, Input, Select, Textarea, DemoBadge, Badge } from "@/components/ui";
 import { useAuth } from "@/auth/AuthContext";
 import { useToast } from "@/components/ui";
+import { useDataSource } from "@/app/DataSourceContext";
 import { investigations } from "@/api/investigations";
 import { validateAddressInput } from "@/lib/address";
 
 export function NewCasePage() {
   const navigate = useNavigate();
-  const { can, user } = useAuth();
+  const { can, user, username } = useAuth();
   const { push } = useToast();
+  const { isDemo } = useDataSource();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -46,7 +48,13 @@ export function NewCasePage() {
         priority,
         tags: ["crime-finance", "typology-review"],
       });
-      push({ kind: "ok", title: "Investigation created", description: `${created.id} (demo persistence)` });
+      push({
+        kind: "ok",
+        title: "Investigation created",
+        description: isDemo
+          ? `${created.id} — saved locally for this session (demo persistence)`
+          : `${created.id} — persisted by the backend case store.`,
+      });
       navigate(`/cases/${created.id}`);
     } catch (err) {
       push({ kind: "error", title: "Could not create investigation", description: err instanceof Error ? err.message : "Unexpected error" });
@@ -58,12 +66,12 @@ export function NewCasePage() {
     <div className="page">
       <PageHeader
         title="New Investigation"
-        subtitle="Create a case shell. Persistence is mocked until the backend ships a case store."
+        subtitle={isDemo ? "Create a case shell for this browser session (demo persistence)." : "Create a case shell. The case is persisted by the backend store and can be linked to a live wallet analysis."}
         crumbs={[{ label: "Investigations", to: "/investigations" }, { label: "New" }]}
       />
 
       <Card title="Case details">
-        <DemoBadge />
+        {isDemo ? <DemoBadge /> : <Badge className="status-open">Backend persistence</Badge>}
         <form className="stack" onSubmit={submit}>
           <Field label="Case name" htmlFor="nc-name" hint="Human-readable title, e.g. ‘Suspicious USDT migration — Chain A’">
             <Input id="nc-name" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -102,7 +110,7 @@ export function NewCasePage() {
             </Button>
             {user ? (
               <Badge className="status-open" style={{ marginLeft: "auto" }}>
-                Creator: {user.name}
+                Creator: {username}
               </Badge>
             ) : null}
           </div>

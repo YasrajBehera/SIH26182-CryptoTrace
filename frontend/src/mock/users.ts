@@ -17,6 +17,7 @@ export interface DemoCredentials {
 export const demoUsers: AppUser[] = [
   {
     id: "u-admin",
+    username: "admin",
     name: "Arya Verma",
     role: "admin",
     title: "Platform Administrator",
@@ -25,16 +26,28 @@ export const demoUsers: AppUser[] = [
     isActive: true,
   },
   {
-    id: "u-inv",
+    id: "u-sinv",
+    username: "senior_investigator",
     name: "Rohan Iyer",
-    role: "investigator",
+    role: "senior_investigator",
     title: "Senior Investigator",
-    email: "rohan.inv@cryptotrace.local",
+    email: "rohan.senior@cryptotrace.local",
+    lastActive: new Date().toISOString(),
+    isActive: true,
+  },
+  {
+    id: "u-inv",
+    username: "investigator",
+    name: "Aarav Kapoor",
+    role: "investigator",
+    title: "Investigator",
+    email: "aarav.inv@cryptotrace.local",
     lastActive: new Date().toISOString(),
     isActive: true,
   },
   {
     id: "u-analyst",
+    username: "analyst",
     name: "Meera Nair",
     role: "analyst",
     title: "Blockchain Intelligence Analyst",
@@ -44,6 +57,7 @@ export const demoUsers: AppUser[] = [
   },
   {
     id: "u-reviewer",
+    username: "reviewer",
     name: "Kabir Shah",
     role: "reviewer",
     title: "Case Reviewer",
@@ -53,6 +67,7 @@ export const demoUsers: AppUser[] = [
   },
   {
     id: "u-read",
+    username: "readonly",
     name: "Nisha Rao",
     role: "read_only",
     title: "Read-Only Analyst",
@@ -64,6 +79,7 @@ export const demoUsers: AppUser[] = [
 
 export const demoCredentials: DemoCredentials[] = [
   { username: "admin", password: "cryptotrace-demo", userId: "u-admin" },
+  { username: "senior_investigator", password: "cryptotrace-demo", userId: "u-sinv" },
   { username: "investigator", password: "cryptotrace-demo", userId: "u-inv" },
   { username: "analyst", password: "cryptotrace-demo", userId: "u-analyst" },
   { username: "reviewer", password: "cryptotrace-demo", userId: "u-reviewer" },
@@ -89,6 +105,21 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "audit.read",
     "user.manage",
     "settings.manage",
+  ],
+  senior_investigator: [
+    "investigation.read",
+    "investigation.create",
+    "investigation.update",
+    "wallet.read",
+    "wallet.analyze",
+    "graph.read",
+    "attribution.read",
+    "evidence.read",
+    "evidence.create",
+    "evidence.delete",
+    "risk.read",
+    "report.create",
+    "report.export",
   ],
   investigator: [
     "investigation.read",
@@ -130,5 +161,5 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
 };
 
 export function allDemoRoles(): Role[] {
-  return ["admin", "investigator", "analyst", "reviewer", "read_only"];
+  return ["admin", "senior_investigator", "investigator", "analyst", "reviewer", "read_only"];
 }

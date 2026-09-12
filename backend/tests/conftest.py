@@ -1,6 +1,205 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import app.db as _app_db
+
+# Keep the unit suite hermetic: the repositories choose a durable SQLAlchemy
+# backend based on database_available(), which probes live Postgres. The test
+# suite was written against the deterministic in-memory stores, so pin the
+# decision to False before any test module can trigger a probe. The real
+# backend still provisions and uses live Postgres at boot (see app.main).
+_app_db._database_available = False
+
+
+@pytest.fixture
+def fake_session():
+    return FakeSession()
+
+
+@pytest.fixture
+def fake_driver(fake_session):
+    return FakeDriver(fake_session)
+
+
+@pytest.fixture
+def app_client(fake_driver):
+    from app.main import app
+    from graph.api import get_driver
+    from app.auth.deps import get_current_user
+    from app.auth.repository import MemoryUserRepository, make_user_repository
+    from app.auth.demo import DEMO_USERS
+    from app.security import hash_password
+
+    from cases.repository import (
+        MemoryInvestigationRepository,
+        make_investigation_repository,
+    )
+    from evidence.repository import EvidenceRepository, make_evidence_repository
+    from risk.repository import MemoryRiskRepository, make_risk_repository
+    from sahyog.repository import MemorySahyogRepository, make_sahyog_repository
+    from wallets.repository import MemoryWalletRepository, make_wallet_repository
+
+    repo = MemoryUserRepository()
+    for spec in DEMO_USERS:
+        repo.create_user(
+            username=spec["username"],
+            display_name=spec["display_name"],
+            email=spec.get("email", ""),
+            role=spec["role"],
+            title=spec.get("title", ""),
+            password_hash=hash_password("cryptotrace-demo"),
+            is_demo=True,
+        )
+    admin = repo.get_by_username("admin")
+
+    app.dependency_overrides[get_driver] = lambda: fake_driver
+    app.dependency_overrides[make_user_repository] = lambda: repo
+    app.dependency_overrides[get_current_user] = lambda: admin
+    # Fresh in-memory stores per test (one shared instance so requests within
+    # a single test share state) keep the cases/wallets/risk/sahyog surfaces
+    # hermetic while the suite still shares the attribution evidence singleton
+    # (as existing pipeline tests expect).
+    cases_repo = MemoryInvestigationRepository()
+    wallets_repo = MemoryWalletRepository()
+    risk_repo = MemoryRiskRepository()
+    sahyog_repo = MemorySahyogRepository()
+    app.dependency_overrides[make_investigation_repository] = lambda: cases_repo
+    app.dependency_overrides[make_evidence_repository] = lambda: EvidenceRepository()
+    app.dependency_overrides[make_wallet_repository] = lambda: wallets_repo
+    app.dependency_overrides[make_risk_repository] = lambda: risk_repo
+    app.dependency_overrides[make_sahyog_repository] = lambda: sahyog_repo
+    client = TestClient(app)
+    _clear_rate_limits(client)
+    yield client
+    app.dependency_overrides.clear()
+
+
+def _clear_rate_limits(client):
+    """Reset the process-global in-memory rate limiter between tests.
+
+    The RateLimitMiddleware is installed once per process on the shared app, so
+    without a reset, requests across many API tests (all seen as the same
+    client IP) would trip the fixed-window limits and make the suite order- and
+    speed-dependent. A health probe builds the middleware stack; afterwards we
+    unwrap it to reach the limiter and drop its hit log.
+    """
+    from app.middleware import RateLimitMiddleware
+
+    client.get("/api/v1/health")
+    stack = getattr(client.app, "middleware_stack", None)
+    seen = set()
+    node = stack
+    while node is not None and id(node) not in seen:
+        seen.add(id(node))
+        if isinstance(node, RateLimitMiddleware):
+            node._hits.clear()
+            return
+        node = getattr(node, "app", None)
+
+
+TEST_AUTH_SECRET = "test-auth-secret-0123456789abcdef"
+
+
+@pytest.fixture(autouse=True)
+def _pin_auth_secret():
+    """Pin the token secret for every test so the dev-secret dotfile (and its
+    module-level cache) is never consulted or created during the suite."""
+    from app.config import settings
+
+    prev = settings.auth_secret
+    settings.auth_secret = TEST_AUTH_SECRET
+    try:
+        yield
+    finally:
+        settings.auth_secret = prev
+
+
+@pytest.fixture
+def memory_user_repo():
+    """Seeded in-memory user repository with the scaffolding demo accounts."""
+    from app.auth.repository import MemoryUserRepository
+    from app.auth.demo import DEMO_USERS
+    from app.security import hash_password
+
+    repo = MemoryUserRepository()
+    for spec in DEMO_USERS:
+        repo.create_user(
+            username=spec["username"],
+            display_name=spec["display_name"],
+            email=spec.get("email", ""),
+            role=spec["role"],
+            title=spec.get("title", ""),
+            password_hash=hash_password("cryptotrace-demo"),
+            is_demo=True,
+        )
+    return repo
+
+
+@pytest.fixture
+def memory_audit_repo():
+    from app.audit.repository import MemoryAuditLogRepository
+
+    return MemoryAuditLogRepository()
+
+
+@pytest.fixture
+def auth_client(memory_user_repo, memory_audit_repo):
+    """Purpose-built TestClient with auth/admin/audit routers only.
+
+    Built on a fresh FastAPI app (no global rate limiter) so login-frequency
+    tests are deterministic, with all repositories switched to in-memory stores
+    and a fixed token-signing secret.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.auth.api import router as auth_router
+    from app.auth.api import admin_router as admin_users_router
+    from app.audit.api import router as audit_router
+    from app.auth.repository import make_user_repository
+    from app.audit.repository import make_audit_log_repository
+    from app.auth.deps import get_auth_secret
+    from app.config import settings
+
+    test_app = FastAPI(title="cryptotrace-auth-test")
+    test_app.include_router(auth_router)
+    test_app.include_router(admin_users_router)
+    test_app.include_router(audit_router)
+    test_app.dependency_overrides[make_user_repository] = lambda: memory_user_repo
+    test_app.dependency_overrides[make_audit_log_repository] = lambda: memory_audit_repo
+    test_app.dependency_overrides[get_auth_secret] = lambda: TEST_AUTH_SECRET
+
+    prev_auth_secret = settings.auth_secret
+    settings.auth_secret = TEST_AUTH_SECRET
+    try:
+        yield TestClient(test_app)
+    finally:
+        settings.auth_secret = prev_auth_secret
+
+
+def make_test_token(username: str, role: str, user_id: str = "1") -> str:
+    """Issue a signed access token matching the fixture test secret."""
+    from app.security import create_signed_token
+
+    return create_signed_token(
+        {"sub": user_id, "username": username, "role": role, "type": "access"},
+        secret=TEST_AUTH_SECRET,
+        ttl_seconds=3600,
+    )
+
+
+@pytest.fixture
+def admin_token() -> str:
+    return make_test_token("admin", "admin")
+
+
+@pytest.fixture
+def investigator_token() -> str:
+    return make_test_token("senior_investigator", "senior_investigator", "2")
+
+
+def bearer(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
 
 class FakeRecord(dict):
     pass
@@ -111,24 +310,3 @@ class FakeDriver:
 
     def close(self):
         self.closed = True
-
-
-@pytest.fixture
-def fake_session():
-    return FakeSession()
-
-
-@pytest.fixture
-def fake_driver(fake_session):
-    return FakeDriver(fake_session)
-
-
-@pytest.fixture
-def app_client(fake_driver):
-    from app.main import app
-    from graph.api import get_driver
-
-    app.dependency_overrides[get_driver] = lambda: fake_driver
-    client = TestClient(app)
-    yield client
-    app.dependency_overrides.clear()

@@ -22,6 +22,7 @@ class Provenance(BaseModel):
 class EvidenceRecord(BaseModel):
     evidence_id: str
     attribution_id: str
+    investigation_id: Optional[str] = None
     evidence_type: EvidenceType
     address: str
     chain: str

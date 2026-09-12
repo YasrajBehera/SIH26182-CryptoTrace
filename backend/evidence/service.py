@@ -1,18 +1,22 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from evidence.models import EvidenceRecord, EvidenceType, Provenance
-from evidence.repository import EvidenceRepository
+from evidence.repository import EvidenceRepository, make_evidence_repository
 
 
 class EvidenceService:
     def __init__(self, repository: EvidenceRepository | None = None) -> None:
-        self._repo = repository or EvidenceRepository()
+        self._repo = repository or make_evidence_repository()
 
     @property
     def repository(self) -> EvidenceRepository:
         return self._repo
+
+    @property
+    def is_persistent(self) -> bool:
+        return not self._repo.is_demo
 
     def create_evidence(
         self,
@@ -27,10 +31,12 @@ class EvidenceService:
         source: str = "synthetic",
         timestamp: int | None = None,
         method: str = "attribution_engine_v1",
+        investigation_id: str | None = None,
     ) -> EvidenceRecord:
         record = EvidenceRecord(
             evidence_id=f"ev-{uuid.uuid4().hex[:12]}",
             attribution_id=attribution_id,
+            investigation_id=investigation_id,
             evidence_type=evidence_type,
             address=address.lower(),
             chain=chain,
@@ -62,3 +68,24 @@ class EvidenceService:
         self, address: str, chain: str
     ) -> List[EvidenceRecord]:
         return self._repo.get_by_address(address, chain)
+
+    def get_evidence_for_investigation(
+        self, investigation_id: str
+    ) -> List[EvidenceRecord]:
+        return self._repo.get_by_investigation(investigation_id)
+
+    def link_to_investigation(
+        self, attribution_id: str, investigation_id: str
+    ) -> List[EvidenceRecord]:
+        """Rebind every evidence record produced by an analysis to a case."""
+        linked: List[EvidenceRecord] = []
+        for record in self._repo.get_by_attribution(attribution_id):
+            updated = record.model_copy(
+                update={"investigation_id": investigation_id}
+            )
+            self._repo.store(updated)
+            linked.append(updated)
+        return linked
+
+    def delete_evidence(self, evidence_id: str) -> bool:
+        return self._repo.delete(evidence_id)

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { PageHeader, Button, Card, DemoBadge, Badge, Input, Field, EmptyState, LoadingBlock } from "@/components/ui";
+import { PageHeader, Button, Card, DemoBadge, Badge, Input, Field, EmptyState, LoadingBlock, useToast } from "@/components/ui";
 import { ExportIcon } from "@/components/icons";
 import { ReportSectionSelector, ReportPreview, ALL_REPORT_SECTIONS } from "@/components/reports/ReportComponents";
 import { useApi } from "@/hooks/useApi";
@@ -8,6 +8,7 @@ import { investigations } from "@/api/investigations";
 import { wallets } from "@/api/wallets";
 import { attribution } from "@/api/attribution";
 import { evidence } from "@/api/evidence";
+import { reports } from "@/api/reports";
 import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
 import type { ReportConfig, ReportSectionKey } from "@/api/types";
@@ -16,7 +17,8 @@ import { validateAddressInput } from "@/lib/address";
 export function ReportsPage() {
   const [params, setParams] = useSearchParams();
   const { isDemo } = useDataSource();
-  const { user, can } = useAuth();
+  const { username, can } = useAuth();
+  const { push } = useToast();
 
   const caseParam = params.get("case") ?? "";
   const walletParam = params.get("wallet") ?? "";
@@ -52,7 +54,7 @@ export function ReportsPage() {
       metadata: {
         caseId: caseData?.id ?? `CT-${target.slice(0, 6).toUpperCase()}-NWP`,
         caseName: caseData?.name ?? "Wallet analysis",
-        investigator: user?.name ?? "Unassigned",
+        investigator: username ?? "Unassigned",
         generatedAt: new Date().toISOString(),
         classification: "INTERNAL / LAW ENFORCEMENT COOPERATION",
         network,
@@ -60,7 +62,7 @@ export function ReportsPage() {
       },
       sections,
     }),
-    [caseData, user, network, walletAddress, sections, target],
+    [caseData, username, network, walletAddress, sections, target],
   );
 
   if (!can("report.create")) {
@@ -74,21 +76,43 @@ export function ReportsPage() {
     );
   }
 
-  const exportPdf = () => {
-    window.print();
+  const exportPdf = async () => {
+    if (!can("report.export")) {
+      window.print();
+      return;
+    }
+    if (isDemo) {
+      window.print();
+      return;
+    }
+    try {
+      const { url, reportId } = await reports.exportPdf(config);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${reportId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      push({ kind: "ok", title: "Report exported", description: `Server-side PDF ${reportId}.pdf generated from persisted investigation data.` });
+    } catch (err) {
+      push({ kind: "error", title: "PDF export unavailable", description: err instanceof Error ? err.message : "Unknown error. Falling back to the browser print view." });
+      window.print();
+    }
   };
 
   return (
     <div className="page">
       <PageHeader
         title="Reports"
-        subtitle="Build and export a case report. The preview is browser-rendered; server-side PDF export is pending."
+        subtitle="Build and export a case report. In live mode the server renders the PDF from persisted investigation data; demo mode uses the browser print view."
         crumbs={[{ label: "Reports" }]}
         actions={
           <>
-            {isDemo ? <DemoBadge label="DEMO REPORT PREVIEW" /> : <Badge className="status-open">Live</Badge>}
+            {isDemo ? <DemoBadge label="DEMO REPORT PREVIEW" /> : <Badge className="status-open">Live data</Badge>}
+            {isDemo ? <Badge className="status-draft">Server-side export: NOT CONFIGURED</Badge> : <Badge className="status-open">Server-side PDF ready</Badge>}
             <Button variant="primary" leading={<ExportIcon />} onClick={exportPdf} disabled={!walletAddress}>
-              Export PDF (print)
+              {isDemo ? "Export PDF (print)" : "Export server PDF"}
             </Button>
           </>
         }

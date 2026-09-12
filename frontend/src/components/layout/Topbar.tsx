@@ -13,12 +13,12 @@ const NETWORKS = [
 
 const DEMO_NOTIFICATIONS = [
   { id: "n1", title: "Risk escalated — CT-2026-0141", meta: "Just now · system" },
-  { id: "n2", title: "New VASP candidate detected", meta: "12m ago · attribution stub" },
+  { id: "n2", title: "New VASP candidate detected", meta: "12m ago · attribution engine" },
   { id: "n3", title: "Evidence E-021 attached", meta: "18m ago · Rohan Iyer" },
 ];
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
-  const { user, logout, role } = useAuth();
+  const { user, username, logout, role } = useAuth();
   const { mode } = useDataSource();
   const [network, setNetwork] = useState("eth");
   const navigate = useNavigate();
@@ -67,9 +67,9 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
 
         <Dropdown
           label="User menu"
-          trigger={<span>{user?.name ?? "User"} · {role?.replace("_", " ") ?? "—"}</span>}
+          trigger={<span>{username ?? "User"} · {role?.replace("_", " ") ?? "—"}</span>}
           items={[
-            { key: "__h", label: user?.title ?? "" },
+            { key: "__h", label: `${user?.name ?? ""}${user?.name ? " — " : ""}${user?.title ?? ""}` },
             { key: "__sep" },
             { key: "profile", label: "Profile", onClick: () => navigate("/admin/settings") },
             { key: "mode", label: mode === "live" ? "Data source: Live" : "Data source: Demo", onClick: () => navigate("/dashboard") },

@@ -83,4 +83,28 @@ describe("DataTable", () => {
     const rowsAfter = within(table).getAllByRole("row").map((r) => r.textContent);
     expect(rowsAfter).not.toEqual(rowsBefore);
   });
+
+  it("activates a clickable row with Enter and Space keys", async () => {
+    const user = userEvent.setup();
+    const onRowClick = vi.fn();
+    render(
+      <DataTable
+        rows={[{ id: "r1", v: 1 }, { id: "r2", v: 2 }]}
+        rowKey={(r) => r.id}
+        columns={[{ key: "v", header: "Value", cell: (r) => String(r.v) }]}
+        onRowClick={onRowClick}
+        testid="kbd-table"
+      />,
+    );
+    const table = screen.getByTestId("kbd-table");
+    expect(within(table).getAllByRole("row")).toHaveLength(3); // header + 2 rows
+
+    await user.tab();
+    await user.keyboard("{Enter}");
+    expect(onRowClick).toHaveBeenNthCalledWith(1, { id: "r1", v: 1 });
+
+    await user.tab();
+    await user.keyboard(" ");
+    expect(onRowClick).toHaveBeenNthCalledWith(2, { id: "r2", v: 2 });
+  });
 });

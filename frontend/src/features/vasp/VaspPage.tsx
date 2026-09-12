@@ -14,6 +14,7 @@ const CONF_RANK: Record<ConfidenceLevel, number> = { high: 0, medium: 1, low: 2,
 export function VaspPage() {
   const [params] = useSearchParams();
   const wallet = params.get("wallet") ?? "";
+  const entity = params.get("entity") ?? "";
   const { isDemo } = useDataSource();
   const { can } = useAuth();
 
@@ -31,9 +32,15 @@ export function VaspPage() {
     );
   }
 
-  const ranked = candidates
-    ? [...candidates].sort((a, b) => (CONF_RANK[a.confidenceLevel] ?? 3) - (CONF_RANK[b.confidenceLevel] ?? 3))
-    : [];
+  const ranked = (() => {
+    if (!candidates) return [];
+    const sorted = [...candidates].sort(
+      (a, b) => (CONF_RANK[a.confidenceLevel] ?? 3) - (CONF_RANK[b.confidenceLevel] ?? 3),
+    );
+    if (!entity) return sorted;
+    const q = entity.toLowerCase();
+    return sorted.filter((c) => c.vaspName.toLowerCase().includes(q));
+  })();
 
   return (
     <div className="page">
@@ -54,6 +61,12 @@ export function VaspPage() {
         </Card>
       ) : null}
 
+      {entity ? (
+        <Card title="Filtered by entity" subtitle={`Showing candidates matching "…${entity}…".`}>
+          <span className="mono" data-testid="vasp-entity-filter">{entity}</span>
+        </Card>
+      ) : null}
+
       {loading ? (
         <LoadingBlock />
       ) : error ? (
@@ -61,13 +74,13 @@ export function VaspPage() {
           <p style={{ color: "var(--text-muted)" }}>{error}</p>
           <Button onClick={reload}>Retry</Button>
         </Card>
-      ) : !candidates?.length ? (
+      ) : !ranked.length ? (
         <EmptyState
           title="No candidates"
           description={
             isDemo
-              ? "The synthetic adapter returned no candidates for this wallet. Try removing the wallet filter."
-              : "No attribution candidates were returned by the backend pipeline for this wallet."
+              ? "The synthetic adapter returned no candidates for this filter. Try removing the wallet/entity filter."
+              : "No attribution candidates were returned by the backend pipeline for this filter."
           }
         />
       ) : (
@@ -90,7 +103,7 @@ export function VaspPage() {
           </Card>
 
           {/* Detailed candidate cards */}
-          {candidates.map((c) => (
+          {ranked.map((c) => (
             <CandidateCard key={c.id} candidate={c} />
           ))}
         </div>

@@ -54,7 +54,7 @@ export function WalletExplorerPage() {
       <Card title="Workflow" subtitle="Typical investigator path — each step follows the same evidence pipeline.">
         <InvestigationWorkflow active={0} />
         <div className="row" style={{ marginTop: 12 }}>
-          <Button variant="primary" leading={<AddIcon />} onClick={() => navigate("/investigations?new=1")}>
+          <Button variant="primary" leading={<AddIcon />} onClick={() => navigate("/cases/new")}>
             New Investigation
           </Button>
         </div>

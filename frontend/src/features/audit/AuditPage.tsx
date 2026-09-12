@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
 import { PageHeader, Button, Card, DemoBadge, Badge, Input, Select, LoadingBlock, ErrorState } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { audit } from "@/api/evidence";
+import { audit } from "@/api/audit";
 import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
 import { formatDate } from "@/lib/format";
 import type { AuditAction, AuditEvent } from "@/api/types";
 
 const ACCOUNTABILITY_NOTICE =
-  "Every screen interaction that reads or writes case data should be recorded here once an audit backend ships. This log is labeled demo data today.";
+  "Every sensitive action (login, logout, user admin, analyze, export) is recorded server-side and served by GET /api/v1/audit. In demo mode the log is labeled synthetic data.";
 
 export function AuditPage() {
   const { isDemo } = useDataSource();
@@ -50,7 +50,7 @@ export function AuditPage() {
     <div className="page">
       <PageHeader
         title="Audit Logs"
-        subtitle="Accountability trail for investigator actions. Demo records until an audit backend ships."
+        subtitle="Accountability trail for investigator actions. Live mode reads the backend audit log; demo mode shows synthetic records."
         crumbs={[{ label: "Audit Logs" }]}
         actions={isDemo ? <DemoBadge label="DEMO AUDIT TRAIL" /> : undefined}
       />

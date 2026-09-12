@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SearchIcon } from "@/components/icons";
 import { investigations } from "@/api/investigations";
+import { attribution } from "@/api/attribution";
 import { getDemoEvidence } from "@/mock";
 import { shortenAddress } from "@/lib/format";
 import { isLikelyAddress, isLikelyHash } from "@/lib/address";
@@ -25,11 +26,22 @@ export function GlobalSearch() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [caseList, setCaseList] = useState<Awaited<ReturnType<typeof investigations.list>>>([]);
   const [evidenceList] = useState(() => getDemoEvidence());
+  const [vaspNames, setVaspNames] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     investigations.list().then((c) => {
       if (!cancelled) setCaseList(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    attribution.vaspNames().then((names) => {
+      if (!cancelled) setVaspNames(names);
     });
     return () => {
       cancelled = true;
@@ -106,23 +118,22 @@ export function GlobalSearch() {
       });
     }
 
-    // VASP entity name search (demo candidates are the only "entities" today)
-    if (q.includes("staking") || q.includes("exchange") || q.includes("candidate")) {
+    // VASP entity name search from the curated directory
+    const matchingEntities = vaspNames.filter((n) => n.toLowerCase().includes(q));
+    if (matchingEntities.length) {
       out.push({
         category: "Entities",
-        results: [
-          {
-            id: "cand-1",
-            label: "StakingPool.io (candidate)",
-            meta: "VASP candidate",
-            to: `/vasp?focus=cand-1`,
-          },
-        ],
+        results: matchingEntities.slice(0, 6).map((n) => ({
+          id: n,
+          label: n,
+          meta: "VASP entity",
+          to: `/vasp?entity=${encodeURIComponent(n)}`,
+        })),
       });
     }
 
     return out;
-  }, [query, caseList, evidenceList]);
+  }, [query, caseList, evidenceList, vaspNames]);
 
   const flatResults = groups.flatMap((g) => g.results);
 

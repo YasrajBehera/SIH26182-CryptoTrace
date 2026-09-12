@@ -8,6 +8,7 @@ import {
   LogoutIcon,
   ReportIcon,
   RiskIcon,
+  SahyogIcon,
   SettingsIcon,
   ShieldIcon,
   TxIcon,
@@ -34,8 +35,9 @@ const MAIN_NAV: NavEntry[] = [
   { to: "/investigations", label: "Investigations", icon: <CasesIcon />, permission: "investigation.read" },
   { to: "/wallets", label: "Investigate Wallet", icon: <WalletIcon />, permission: "wallet.read" },
   { to: "/transactions", label: "Transactions", icon: <TxIcon />, permission: "wallet.read" },
-  { to: "/graph", label: "Transaction Graph", icon: <GraphIcon />, badge: "stub", permission: "graph.read" },
-  { to: "/vasp", label: "VASP Attribution", icon: <VaspIcon />, badge: "stub", permission: "attribution.read" },
+  { to: "/graph", label: "Transaction Graph", icon: <GraphIcon />, permission: "graph.read" },
+  { to: "/vasp", label: "VASP Attribution", icon: <VaspIcon />, permission: "attribution.read" },
+  { to: "/sahyog", label: "SAHYOG Referrals", icon: <SahyogIcon />, badge: "demo", permission: "wallet.analyze" },
   { to: "/evidence", label: "Evidence", icon: <EvidenceIcon />, permission: "evidence.read" },
   { to: "/risk", label: "Risk Analysis", icon: <RiskIcon />, permission: "risk.read" },
   { to: "/reports", label: "Reports", icon: <ReportIcon />, permission: "report.export" },
@@ -71,7 +73,7 @@ function NavItems({ entries, can }: { entries: NavEntry[]; can: (permission: Per
 }
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { user, logout, can } = useAuth();
+  const { user, username, logout, can } = useAuth();
   const { mode, backendReachable } = useDataSource();
 
   const backendStatusEl =
@@ -126,7 +128,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           {user ? (
             <div className="sidebar-user">
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>{user.name}</div>
+                <div style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>{username}</div>
                 <div style={{ fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>{user.title}</div>
               </div>
               <Badge className="status-open" style={{ textTransform: "capitalize", flex: "0 0 auto" }}>

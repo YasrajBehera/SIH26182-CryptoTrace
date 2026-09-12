@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { PageHeader, Button, MetricCard, Card, Timeline, DemoBadge, Badge, Input, Select, EmptyState } from "@/components/ui";
 import { AddIcon, WalletIcon, ExportIcon, RiskIcon } from "@/components/icons";
 import { useApi } from "@/hooks/useApi";
-import { investigations, activity } from "@/api/investigations";
+import { investigations, activity, getLastAnalysis } from "@/api/investigations";
 import { evidence } from "@/api/evidence";
 import { attribution } from "@/api/attribution";
 import { graph } from "@/api/graph";
@@ -70,6 +70,16 @@ export function DashboardPage() {
     [],
     { enabled: demo },
   );
+
+  // Honest graph-engine status: only "neo4j" means the live graph is usable.
+  const { data: graphHealth } = useApi(() => graph.health(), [], { enabled: !demo });
+  const graphProvider = demo ? "synthetic" : graphHealth?.provider ?? "checking";
+
+  // If the investigator has already run an analysis (session context), light
+  // up the workflow up to the evidence stage so the "one investigation, many
+  // pages" flow is visible from the dashboard.
+  const lastAnalysis = getLastAnalysis();
+  const workflowStep = lastAnalysis ? 5 : -1;
 
   // Investigation control bar — these filters genuinely narrow the data below.
   const [q, setQ] = useState("");
@@ -140,7 +150,7 @@ export function DashboardPage() {
         actions={
           <>
             {can("investigation.create") ? (
-              <Button variant="primary" leading={<AddIcon />} onClick={() => navigate("/investigations?new=1")}>
+              <Button variant="primary" leading={<AddIcon />} onClick={() => navigate("/cases/new")}>
                 New Investigation
               </Button>
             ) : null}
@@ -160,7 +170,12 @@ export function DashboardPage() {
 
       {/* Investigation workflow pipeline */}
       <Card title="Investigation workflow" subtitle="Every trace follows the same evidence-first pipeline — from unknown wallet to documented report.">
-        <InvestigationWorkflow active={-1} />
+        <InvestigationWorkflow active={workflowStep} />
+        {workflowStep >= 0 ? (
+          <p className="text-dim" style={{ fontSize: "var(--text-sm)", marginTop: 8 }}>
+            A wallet analysis is in progress — resume it from Evidence, Graph, or Transactions.
+          </p>
+        ) : null}
       </Card>
 
       {/* Top metrics */}
@@ -230,26 +245,26 @@ export function DashboardPage() {
               state={mode === "live" ? "Connected" : "Not reachable — demo mode"}
             />
             <StatusRow
-              label="Database (cases / evidence)"
-              detail="Investigation persistence"
-              tone="warn"
-              state="Not connected"
+              label="Investigation persistence"
+              detail="Backend case store (none configured)"
+              tone={mode === "live" ? "ok" : "warn"}
+              state={mode === "live" ? "Connected — no rows yet" : "Not connected"}
             />
             <StatusRow
               label="Analysis engine (graph)"
-              detail="Member 2 — Neo4j graph"
-              tone="warn"
-              state="Not available"
+              detail={graphProvider === "neo4j" ? "Neo4j reachable via backend" : "Postgres/NX synthetic pipeline"}
+              tone={graphProvider === "neo4j" ? "ok" : graphProvider === "checking" ? "warn" : "warn"}
+              state={graphProvider === "neo4j" ? "Connected" : graphProvider === "checking" ? "Probing…" : "Not available"}
             />
             <StatusRow
               label="Attribution engine (VASP)"
-              detail="Member 3 — intelligence"
-              tone="warn"
-              state="Not available"
+              detail="On-demand /api/v1/investigations/{address}/analyze"
+              tone={mode === "live" ? "ok" : "warn"}
+              state={mode === "live" ? "Connected (on demand)" : "Not available"}
             />
             <StatusRow
               label="Report service (PDF)"
-              detail="Server-side export"
+              detail="Server-side export not implemented"
               tone="warn"
               state="Not connected"
             />
@@ -418,7 +433,19 @@ export function DashboardPage() {
                 </thead>
                 <tbody>
                   {recentEvidence.map((e) => (
-                    <tr key={e.id} className="clickable" onClick={() => navigate(`/evidence?focus=${encodeURIComponent(e.id)}`)}>
+                    <tr
+                      key={e.id}
+                      className="clickable"
+                      onClick={() => navigate(`/evidence?focus=${encodeURIComponent(e.id)}`)}
+                      tabIndex={0}
+                      aria-label={`Open evidence ${e.id}`}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          navigate(`/evidence?focus=${encodeURIComponent(e.id)}`);
+                        }
+                      }}
+                    >
                       <td><strong>{e.id}</strong></td>
                       <td>{prettyLabel(e.type)}</td>
                       <td>{e.source}</td>
@@ -466,7 +493,19 @@ export function DashboardPage() {
                 </thead>
                 <tbody>
                   {recentCandidates.map((c) => (
-                    <tr key={c.id} className="clickable" onClick={() => navigate(`/vasp?wallet=${encodeURIComponent(c.wallet)}`)}>
+                    <tr
+                      key={c.id}
+                      className="clickable"
+                      onClick={() => navigate(`/vasp?wallet=${encodeURIComponent(c.wallet)}`)}
+                      tabIndex={0}
+                      aria-label={`Open VASP candidate ${c.vaspName}`}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          navigate(`/vasp?wallet=${encodeURIComponent(c.wallet)}`);
+                        }
+                      }}
+                    >
                       <td>
                         <span className="row" style={{ gap: 6 }}>
                           <span

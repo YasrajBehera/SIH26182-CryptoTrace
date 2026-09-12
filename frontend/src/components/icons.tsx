@@ -120,3 +120,7 @@ export const ClockIcon = () => (
 export const CheckIcon = () => (
   <Svg><path d="m5 13 4 4L19 7" /></Svg>
 );
+
+export const SahyogIcon = () => (
+  <Svg><rect x="2" y="3" width="20" height="18" rx="2" /><path d="M12 8v8" /><path d="M8 12l4 4 4-4" /></Svg>
+);

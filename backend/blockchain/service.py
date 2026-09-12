@@ -48,10 +48,12 @@ class BlockchainService:
             outgoing_raw = await client.get_transfers(normalized_address, direction="from")
             incoming_raw = await client.get_transfers(normalized_address, direction="to")
 
-        transfers = [
-            *self._normalize_many(incoming_raw, direction="in"),
-            *self._normalize_many(outgoing_raw, direction="out"),
-        ]
+        transfers: list[BlockchainTransfer] = []
+        skipped = 0
+        for direction, raw_rows in (("in", incoming_raw), ("out", outgoing_raw)):
+            normalized, malformed = self._normalize_many(raw_rows, direction)
+            transfers.extend(normalized)
+            skipped += malformed
 
         transfers = self._deduplicate(transfers)
         transfers.sort(key=self._sort_key)
@@ -69,6 +71,7 @@ class BlockchainService:
                 max_transfers=max_transfers,
                 fetched=len(transfers),
                 truncated=truncated,
+                skipped=skipped,
             ),
         )
 
@@ -83,18 +86,22 @@ class BlockchainService:
 
     def _normalize_many(
         self, raw_transfers: list[dict[str, Any]], direction: str
-    ) -> list[BlockchainTransfer]:
-        """Normalize a raw Alchemy response into transfer models, skipping malformed rows."""
-        results: list[BlockchainTransfer] = []
+    ) -> tuple[list[BlockchainTransfer], int]:
+        """Normalize raw transfer rows, skipping malformed records.
 
+        Real provider feeds occasionally contain rows that cannot be normalized
+        (e.g. contract-creation / mint records with no sender or receiver).
+        Those rows are skipped and counted so one bad record cannot fail the
+        whole wallet query. Returns ``(transfers, skipped_count)``.
+        """
+        results: list[BlockchainTransfer] = []
+        skipped = 0
         for raw in raw_transfers:
             try:
                 results.append(self._normalize_one(raw, direction))
             except (KeyError, TypeError, ValueError):
-                # Do not silently hide malformed data; surface it explicitly.
-                raise ValueError("Skipping a malformed transfer record returned by the provider.")
-
-        return results
+                skipped += 1
+        return results, skipped
 
     def _normalize_one(self, raw: dict[str, Any], direction: str) -> BlockchainTransfer:
         raw_from = (raw.get("from") or "").lower()
@@ -104,7 +111,7 @@ class BlockchainService:
 
         asset = raw.get("asset") or "ETH"
         parsed_value = raw.get("value")
-        value_str = str(parsed_value) if parsed_value is not None else "0"
+        value_str = self._value_to_string(parsed_value)
 
         block_num = raw.get("blockNum")
         try:
@@ -142,6 +149,29 @@ class BlockchainService:
             raw_contract_value=raw_contract_value,
             chain=CHAIN_ID,
         )
+
+    @staticmethod
+    def _value_to_string(value: Any) -> str:
+        """Render a provider transfer value as a stable decimal string.
+
+        ``alchemy_getAssetTransfers`` can return ``value`` either as a raw
+        scalar or as ``{"hex": ..., "decimal": ...}``. Prefer the exact decimal
+        string when present; otherwise fall back to hex->decimal, preserving
+        precision instead of printing a Python dict repr.
+        """
+        if value is None:
+            return "0"
+        if isinstance(value, dict):
+            decimal = value.get("decimal")
+            if decimal is not None:
+                return str(decimal)
+            hex_value = value.get("hex")
+            if hex_value:
+                try:
+                    return str(int(str(hex_value), 16))
+                except ValueError:
+                    pass
+        return str(value)
 
     def _deduplicate(self, transfers: list[BlockchainTransfer]) -> list[BlockchainTransfer]:
         seen: set[tuple] = set()

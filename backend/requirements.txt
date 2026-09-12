@@ -7,4 +7,5 @@ sqlalchemy
 neo4j
 httpx
 eth-hash[pycryptodome]
+reportlab
 pytest

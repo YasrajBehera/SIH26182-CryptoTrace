@@ -41,7 +41,7 @@ export const demoCandidates: AttributionCandidate[] = [
         factor: "Graph proximity",
         weight: 20,
         evidence: "Max 2 hops from suspect wallet via bridge contract",
-        source: "Graph analysis (stub)",
+        source: "Synthetic graph analysis (demo)",
         confidenceContribution: 20,
       },
       {
@@ -49,7 +49,7 @@ export const demoCandidates: AttributionCandidate[] = [
         factor: "Transaction pattern",
         weight: 15,
         evidence: "One-way repetitive deposit pattern, consolidation windows",
-        source: "Behavioral analysis (stub)",
+        source: "Synthetic behavioral analysis (demo)",
         confidenceContribution: 15,
       },
       {
@@ -93,7 +93,7 @@ export const demoCandidates: AttributionCandidate[] = [
         factor: "Transaction behavior",
         weight: 10,
         evidence: "Exit-style withdrawals, dust-clearing behavior",
-        source: "Behavioral analysis (stub)",
+        source: "Synthetic behavioral analysis (demo)",
         confidenceContribution: 10,
       },
     ],
@@ -122,6 +122,27 @@ export const demoCandidates: AttributionCandidate[] = [
 
 export function getDemoCandidates(): AttributionCandidate[] {
   return demoCandidates;
+}
+
+/**
+ * Labeled demo VASP directory used by global search. Mirrors the curated
+ * names the backend `GET /api/v1/intelligence/vasp/names` endpoint returns, so
+ * search behaves identically in demo and live modes.
+ */
+export function getDemoVaspNames(): string[] {
+  return Array.from(
+    new Set(
+      [
+        "StakingPool.io",
+        "Proton Exchange",
+        "SynthExchange_A",
+        "SynthExchange_B",
+        "SynthDeFi_Protocol",
+        "SynthMixer_Service",
+        "SynthMerchant_X",
+      ].concat(demoCandidates.map((c) => c.vaspName)),
+    ),
+  ).filter((n) => n && !n.startsWith("Unknown"));
 }
 
 /**

@@ -59,6 +59,9 @@ export function CaseDetailPage() {
             {isDemo || investigation.isDemo ? <DemoBadge /> : null}
             <RiskBadge level={investigation.risk} />
             <StatusBadge status={investigation.status} />
+            {!isDemo ? <Button leading={<TraceIcon />} onClick={() => navigate(`/wallets?address=${encodeURIComponent(investigation.primaryWallet)}&case=${encodeURIComponent(investigation.id)}`)}>
+              Analyze Wallet
+            </Button> : null}
             <Button leading={<TraceIcon />} onClick={() => navigate(`/graph?address=${encodeURIComponent(investigation.primaryWallet)}`)}>
               Trace Funds
             </Button>
@@ -68,7 +71,7 @@ export function CaseDetailPage() {
             <Button leading={<VaspIcon />} onClick={() => navigate(`/vasp?wallet=${encodeURIComponent(investigation.primaryWallet)}`)}>
               Find VASP
             </Button>
-            <Button leading={<EvidenceIcon />} onClick={() => navigate(`/evidence?wallet=${encodeURIComponent(investigation.primaryWallet)}`)}>
+            <Button leading={<EvidenceIcon />} onClick={() => navigate(`/evidence?case=${encodeURIComponent(investigation.id)}&wallet=${encodeURIComponent(investigation.primaryWallet)}`)}>
               Add Evidence
             </Button>
             <Button leading={<ReportIcon />} onClick={() => navigate(`/reports?case=${investigation.id}`)}>
@@ -109,11 +112,12 @@ export function CaseDetailPage() {
         {tab === "overview" ? (
           <div className="stack">
             <p style={{ margin: 0, color: "var(--text-muted)" }}>
-              This is a demo workspace that composes the wallet, graph, VASP, evidence, and reporting features available in this release. Backend case
-              persistence is pending; today the case object is provided by the labeled synthetic adapter.
+              This workspace composes the wallet, graph, VASP, evidence, and reporting features available in this release. In live mode the case is
+              persisted by the backend case store and a pipeline analysis can be attached to it; in demo mode the case object comes from the labeled
+              synthetic adapter.
             </p>
             {can("investigation.update") ? (
-              <Button variant="primary" onClick={() => navigate(`/reports?case=${investigation.id}`)}>
+              <Button variant="primary" onClick={() => navigate(can("report.export") ? `/reports?case=${investigation.id}` : `/graph?address=${encodeURIComponent(investigation.primaryWallet)}`)}>
                 Go to reporting
               </Button>
             ) : null}

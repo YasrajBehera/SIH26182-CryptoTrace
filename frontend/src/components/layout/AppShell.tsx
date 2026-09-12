@@ -29,7 +29,7 @@ export function AppShell() {
           <div className="demo-banner no-print" role="status" style={{ borderRadius: 0, border: 0, borderBottom: "1px solid rgba(47,212,139,0.35)", background: "linear-gradient(90deg, rgba(47,212,139,0.14), rgba(47,212,139,0.04))", color: "#7ce8b8" }}>
             <span aria-hidden>● LIVE</span>
             <span style={{ fontWeight: 400, opacity: 0.9 }}>
-              Connected to CryptoTrace API. Wallet transfers are live; graph/attribution features remain demo stubs.
+              Connected to CryptoTrace API. Wallet transfers and attribution are live; the graph queries the Neo4j engine when reachable, otherwise labeled synthetic topology.
             </span>
           </div>
         )}

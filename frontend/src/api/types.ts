@@ -84,6 +84,59 @@ export interface Investigation {
   isDemo?: boolean;
 }
 
+/* ---- Backend investigation contracts (cases module) ---- */
+
+export interface BackendInvestigationCreate {
+  name: string;
+  description: string;
+  primary_wallet: string;
+  network: string;
+  priority: string;
+  tags: string[];
+}
+
+export interface BackendInvestigation {
+  id: string;
+  name: string;
+  description: string;
+  primary_wallet: string;
+  network: string;
+  priority: string;
+  risk: string;
+  status: string;
+  transactions: number;
+  vasp_candidates: number;
+  evidence_count: number;
+  assigned_analyst: string;
+  created_by: number;
+  latest_analysis_id: string | null;
+  data_source: string;
+  created_at: string;
+  updated_at: string;
+  tags: string[];
+  is_demo: boolean;
+}
+
+export interface BackendInvestigationList {
+  investigations: BackendInvestigation[];
+  total: number;
+  source: string;
+}
+
+export interface BackendRiskAssessment {
+  investigation_id: string | null;
+  wallet_address: string;
+  chain: string;
+  level: RiskLevel;
+  risk_score: number;
+  summary: string;
+  reasoning: string[];
+  factors: Array<{ label: string; detail: string; weight: number }>;
+  data_source: string;
+  disclaimer: string;
+  created_at: string;
+}
+
 export interface InvestigationNote {
   id: string;
   author: string;
@@ -339,6 +392,7 @@ export interface BackendEvidenceRecord {
   confidence: number;
   description: string;
   provenance: BackendEvidenceProvenance;
+  investigation_id?: string | null;
 }
 
 export interface BackendInvestigationResult {
@@ -352,6 +406,8 @@ export interface BackendInvestigationResult {
   analysis_id: string | null;
   evidence_count: number;
   disclaimer: string;
+  case_id?: string | null;
+  data_source?: string;
 }
 
 /* ---- Investigation analysis view model (frontend-facing) ---- */
@@ -445,12 +501,58 @@ export interface ReportConfig {
   sections: ReportSectionKey[];
 }
 
+/* ---- SAHYOG referral intake (DEMO flow; backend adapter) ---- */
+
+export interface SahyogReferralView {
+  id: string;
+  firNo: string;
+  reportedAt: string;
+  victimName: string;
+  amountUSDT: number;
+  suspectWallet: string;
+  chain: "eth" | "btc";
+  status: "new" | "triaged" | "handed_off";
+  triage?: {
+    risk: "high" | "medium" | "low";
+    walletAgeMonths: number;
+    exchangeExposed: boolean;
+    priorFlags: number;
+    recommendation: "investigate" | "monitor" | "watchlist";
+    triagedBy: string;
+    triagedAt: string;
+  };
+  handoffCaseId?: string;
+}
+
+export interface SahyogBackendOut {
+  id: string;
+  fir_no: string;
+  reported_at: string | null;
+  victim_name: string;
+  amount_usdt: number;
+  suspect_wallet: string;
+  chain: string;
+  status: string;
+  triage: Record<string, unknown> | null;
+  handoff_case_id: string | null;
+  data_source: string;
+}
+
+export interface SahyogCreateInput {
+  firNo: string;
+  victimName: string;
+  amountUSDT: number;
+  suspectWallet: string;
+  chain: "eth" | "btc";
+}
+
 /* ---- Users / RBAC (backend auth pending; frontend contract) ---- */
 
-export type Role = "admin" | "investigator" | "analyst" | "reviewer" | "read_only";
+export type Role = "admin" | "senior_investigator" | "investigator" | "analyst" | "reviewer" | "read_only";
 
 export interface AppUser {
   id: string;
+  username: string;
   name: string;
   role: Role;
   title: string;

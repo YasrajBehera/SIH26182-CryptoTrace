@@ -24,8 +24,8 @@ export function RiskPage() {
   );
 
   const highRiskWallets = useMemo(
-    () => Object.values(demoWalletSummaries).filter((w) => w.risk === "high" || w.risk === "critical"),
-    [],
+    () => (isDemo ? Object.values(demoWalletSummaries).filter((w) => w.risk === "high" || w.risk === "critical") : []),
+    [isDemo],
   );
 
   const visibleWallets = useMemo(() => {
@@ -97,7 +97,7 @@ export function RiskPage() {
         )}
       </Card>
 
-      <Card title="High-risk wallets" subtitle={isDemo ? "Synthetic flagged addresses for interface testing." : "Requires a scoring backend."}>
+      <Card title="High-risk wallets" subtitle={isDemo ? "Synthetic flagged addresses for interface testing." : "No flagged-address feed is connected — wallet-level scoring requires a backend risk engine."}>
         <div className="table-toolbar">
           <Select value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Filter risk level" style={{ maxWidth: 160 }}>
             <option value="all">All risk levels</option>
@@ -119,7 +119,10 @@ export function RiskPage() {
         {loading ? (
           <LoadingBlock />
         ) : visibleWallets.length === 0 ? (
-          <EmptyState title="No flagged wallets" description="No demo wallets matched the current filter." />
+          <EmptyState
+            title={isDemo ? "No flagged wallets" : "Risk engine not connected"}
+            description={isDemo ? "No demo wallets matched the current filter." : "The flagged-address feed is not available. Wallet-level risk scoring requires the backend risk engine to be connected."}
+          />
         ) : (
           <table className="data-table" aria-label="High-risk wallets">
             <thead>

@@ -119,12 +119,18 @@ export const demoInvestigations: Investigation[] = [
   },
 ];
 
+const runtimeCases: Investigation[] = [];
+
+export function addDemoInvestigation(caseData: Investigation): void {
+  runtimeCases.push(caseData);
+}
+
 export function getDemoInvestigations(): Investigation[] {
-  return demoInvestigations;
+  return [...demoInvestigations, ...runtimeCases];
 }
 
 export function getDemoInvestigation(id: string): Investigation | undefined {
-  return demoInvestigations.find((c) => c.id.toLowerCase() === id.toLowerCase());
+  return [...demoInvestigations, ...runtimeCases].find((c) => c.id.toLowerCase() === id.toLowerCase());
 }
 
 export const demoNotes: InvestigationNote[] = [

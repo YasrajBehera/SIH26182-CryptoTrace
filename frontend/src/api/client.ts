@@ -1,13 +1,21 @@
 import { logger } from "@/lib/logger";
+import { clearToken, getToken } from "@/auth/tokenStore";
 
 /**
  * Typed fetch client.
  *
  * - All requests go through the Vite dev proxy (`/api` -> backend) so the
  *   backend's Alchemy key never reaches the browser.
+ * - When a bearer token exists it is attached automatically as
+ *   `Authorization: Bearer <token>` so protected endpoints are exercised.
+ * - On a 401 the (now invalid) token is discarded and a
+ *   `cryptotrace:unauthorized` event is fired so the session layer can prompt
+ *   a clean re-login instead of leaving the user on a dead error screen.
  * - Errors are normalized into user-safe messages: no stack traces, no
  *   database details, no internal infrastructure data, no keys.
  */
+
+const SESSION_EXPIRED_EVENT = "cryptotrace:unauthorized";
 
 export const API_BASE = ""; // same origin; vite proxy handles /api
 
@@ -77,10 +85,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   try {
+    const authToken = getToken();
     const res = await fetch(url, {
       method,
       headers: {
         Accept: "application/json",
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
         ...headers,
       },
@@ -99,6 +109,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
 
     if (!res.ok) {
+      if (res.status === 401) {
+        // The presented token is no longer valid. Discard it and let the
+        // session provider prompt a clean re-login.
+        clearToken();
+        window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+      }
       const detail =
         typeof data === "object" && data !== null
           ? (data as ApiErrorBody).detail ?? (data as ApiErrorBody).message
@@ -129,5 +145,7 @@ export const client = {
     request<T>(path, { ...options, method: "POST", body }),
   put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, { ...options, method: "PUT", body }),
+  patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: "PATCH", body }),
   del: <T>(path: string, options?: RequestOptions) => request<T>(path, { ...options, method: "DELETE" }),
 };

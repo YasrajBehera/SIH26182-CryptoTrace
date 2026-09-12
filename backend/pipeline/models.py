@@ -17,6 +17,7 @@ class InvestigationRequest(BaseModel):
 class InvestigationResult(BaseModel):
     address: str
     chain: str
+    data_source: str = "demo"
     transfers_ingested: int = 0
     graph_nodes: int = 0
     graph_edges: int = 0
@@ -24,6 +25,8 @@ class InvestigationResult(BaseModel):
     candidates: List[AttributionCandidate] = Field(default_factory=list)
     analysis_id: Optional[str] = None
     evidence_count: int = 0
+    case_id: Optional[str] = None
+    transactions: List[dict] = Field(default_factory=list)
     disclaimer: str = (
         "This score is an analytical ranking heuristic. "
         "It is NOT proof of wallet ownership or VASP association."

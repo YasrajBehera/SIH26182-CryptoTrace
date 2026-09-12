@@ -1,4 +1,7 @@
-from typing import Optional
+import asyncio
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import List, Optional
 
 from attribution.adapter import build_graph_data
 from attribution.api import get_attribution_service
@@ -8,6 +11,7 @@ from graph.builder import TransactionGraph
 from graph.temporal import fund_flow as compute_fund_flow
 from graph.temporal import temporal_path as compute_temporal_path
 from pipeline.models import InvestigationRequest, InvestigationResult
+from wallets.service import WalletService
 
 
 class InvestigationPipeline:
@@ -16,32 +20,56 @@ class InvestigationPipeline:
     Sharing the AttributionService singleton (and its EvidenceService) is
     required so that evidence records created by POST .../analyze are actually
     retrievable through the evidence service endpoints (GET /api/v1/evidence/*).
+
+    Data sourcing is always explicit:
+      - ``live``  transfers came from the blockchain provider (Alchemy)
+      - ``demo``  synthetic transfers were generated locally (offline fallback)
     """
 
     def __init__(self) -> None:
         self._attr = get_attribution_service()
         self._intel = self._attr.intelligence_service
+        self._wallets = WalletService()
 
     @property
     def attribution_service(self) -> AttributionService:
         return self._attr
 
     @property
-    def intelligence_service(self) -> VASPIntelligenceService:
+    def intelligence_service(self):
         return self._intel
 
-    def _synth_txs_to_graph(
-        self, synth_txs, target_address: str
+    @staticmethod
+    def _tx_field(tx, *names, default=None):
+        """Read a field by any accepted name (synthetic/graph use ``tx_hash``,
+        normalized blockchain transfers use ``transaction_hash``)."""
+        if isinstance(tx, dict):
+            for name in names:
+                if name in tx:
+                    return tx[name]
+            return default
+        for name in names:
+            if hasattr(tx, name):
+                return getattr(tx, name)
+        return default
+
+    def _transfers_to_graph(
+        self, transfers, target_address: str
     ) -> TransactionGraph:
         graph = TransactionGraph()
-        for tx in synth_txs:
+        for tx in transfers:
+            block_timestamp = self._tx_field(tx, "block_timestamp")
+            if block_timestamp is None:
+                block_timestamp = 0
+            elif not isinstance(block_timestamp, int):
+                block_timestamp = int(block_timestamp.timestamp())
             graph.add_edge(
-                chain=tx.chain,
-                tx_hash=tx.tx_hash,
-                sender_address=tx.from_address,
-                receiver_address=tx.to_address,
-                amount=__import__("decimal").Decimal(tx.value),
-                timestamp=tx.block_timestamp,
+                chain=self._tx_field(tx, "chain", default="eth"),
+                tx_hash=self._tx_field(tx, "tx_hash", "transaction_hash"),
+                sender_address=self._tx_field(tx, "from_address", "sender_address"),
+                receiver_address=self._tx_field(tx, "to_address", "receiver_address"),
+                amount=Decimal(self._tx_field(tx, "value")),
+                timestamp=block_timestamp,
             )
         return graph
 
@@ -118,6 +146,51 @@ class InvestigationPipeline:
 
         return graph_data
 
+    def _to_wallet_rows(self, transfers) -> List[dict]:
+        """Normalize blockchain transfers into the agreed wallet-store row shape."""
+        rows: List[dict] = []
+        for t in transfers:
+            ts = t.block_timestamp
+            if hasattr(ts, "timestamp"):
+                ts = int(ts.timestamp())
+            rows.append(
+                {
+                    "chain": self._tx_field(t, "chain", default="eth"),
+                    "tx_hash": self._tx_field(t, "transaction_hash", "tx_hash"),
+                    "block_number": self._tx_field(t, "block_number"),
+                    "block_timestamp": ts,
+                    "from_address": self._tx_field(t, "from_address", "sender_address"),
+                    "to_address": self._tx_field(t, "to_address", "receiver_address"),
+                    "value": str(self._tx_field(t, "value")),
+                    "fee": None,
+                    "token_symbol": self._tx_field(t, "asset", "token_symbol"),
+                }
+            )
+        return rows
+
+    def _try_live(self, request: InvestigationRequest):
+        """Fetch REAL transfers from the blockchain provider.
+
+        Returns (transfers, data_source) or (None, "demo") when the provider is
+        unavailable/misconfigured/the address is not a valid Ethereum address.
+        """
+        if request.chain != "eth":
+            return None, "demo"
+        from blockchain.service import BlockchainService
+
+        service = BlockchainService()
+        try:
+            result = asyncio.run(
+                service.get_wallet_transfers(
+                    request.address, chain=request.chain, limit=request.limit or 200
+                )
+            )
+        except Exception:
+            return None, "demo"
+        if not result.transfers:
+            return None, "demo"
+        return result.transfers, "live"
+
     def run(
         self,
         request: InvestigationRequest,
@@ -126,12 +199,20 @@ class InvestigationPipeline:
         address = request.address.lower()
         chain = request.chain
 
+        data_source = "demo"
+        wallet_rows: List[dict] = []
         if synth_txs is None:
-            from graph.synthetic import generate_transactions
+            transfers, data_source = self._try_live(request)
+            if transfers is not None:
+                synth_txs = transfers
+                wallet_rows = self._to_wallet_rows(transfers)
+            else:
+                data_source = "demo"
+                from graph.synthetic import generate_transactions
 
-            synth_txs = generate_transactions(seed=42, count=30)
+                synth_txs = generate_transactions(seed=42, count=30)
 
-        graph = self._synth_txs_to_graph(synth_txs, address)
+        graph = self._transfers_to_graph(synth_txs, address)
 
         graph_data = self._graph_to_graph_data(graph, address, chain)
 
@@ -148,9 +229,19 @@ class InvestigationPipeline:
         for c in attr_response.candidates:
             evidence_count += len(c.evidence_ids)
 
+        # Persist LIVE flow only; demo/synthetic data must never enter the
+        # durable wallet store (it would be indistinguishable from real chain data).
+        if data_source == "live":
+            self._wallets.register_analysis(
+                address=address,
+                chain=chain,
+                transfers=wallet_rows,
+            )
+
         return InvestigationResult(
             address=address,
             chain=chain,
+            data_source=data_source,
             transfers_ingested=len(synth_txs),
             graph_nodes=graph.node_count,
             graph_edges=graph.edge_count,
@@ -158,4 +249,5 @@ class InvestigationPipeline:
             candidates=attr_response.candidates,
             analysis_id=attr_response.analysis_id,
             evidence_count=evidence_count,
+            transactions=wallet_rows,
         )

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { investigations } from "@/api/investigations";
 import { CandidateCard } from "@/components/attribution/CandidateCard";
 import { EvidenceCard, ProvenanceChain } from "@/components/evidence/EvidenceComponents";
-import { GraphIcon, TraceIcon } from "@/components/icons";
+import { GraphIcon, TraceIcon, TxIcon, EvidenceIcon } from "@/components/icons";
 import {
   Badge,
   Button,
@@ -39,6 +39,7 @@ export function InvestigationAnalyzer() {
   const { push } = useToast();
   const [params, setParams] = useSearchParams();
   const urlAddress = params.get("address") ?? "";
+  const caseId = params.get("case") ?? "";
 
   const [address, setAddress] = useState(urlAddress);
   const [running, setRunning] = useState(false);
@@ -73,9 +74,9 @@ export function InvestigationAnalyzer() {
     setRunning(true);
     setResult(null);
     try {
-      const analysis = await investigations.analyze(trimmed, "eth");
+      const analysis = await investigations.analyze(trimmed, "eth", caseId || undefined);
       setResult(analysis);
-      setParams({ address: trimmed }, { replace: true });
+      setParams({ address: trimmed, ...(caseId ? { case: caseId } : {}) }, { replace: true });
       push({
         kind: "ok",
         title: "Investigation complete",
@@ -203,6 +204,12 @@ export function InvestigationAnalyzer() {
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
             <Button leading={<GraphIcon />} onClick={() => navigate(`/graph?address=${encodeURIComponent(result.address)}`)}>
               Open in graph / fund flow
+            </Button>
+            <Button leading={<TxIcon />} onClick={() => navigate(`/transactions?wallet=${encodeURIComponent(result.address)}`)}>
+              Transaction history
+            </Button>
+            <Button leading={<EvidenceIcon />} onClick={() => navigate(result.analysisId ? `/evidence?analysis_id=${encodeURIComponent(result.analysisId)}` : `/evidence?wallet=${encodeURIComponent(result.address)}`)}>
+              Evidence workspace
             </Button>
           </div>
 

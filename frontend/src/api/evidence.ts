@@ -1,14 +1,17 @@
 import { client } from "./client";
 import { isDemoMode } from "./config";
-import { getDemoEvidence, getDemoProvenance, getDemoAuditEvents } from "@/mock";
+import { getDemoEvidence, getDemoProvenance } from "@/mock";
 import { mapBackendEvidenceToItem } from "./analysis";
-import type { AuditEvent, BackendEvidenceRecord, EvidenceItem, ProvenanceLink } from "./types";
+import type { BackendEvidenceRecord, EvidenceItem, ProvenanceLink } from "./types";
 
 /**
  * Evidence workspace contract.
  *
  * Live mode reads real evidence/provenance from the Member 3 evidence service:
- *   GET /api/v1/evidence/address/{address}?chain=eth
+ *   GET    /api/v1/evidence/address/{address}?chain=eth
+ *   GET    /api/v1/evidence/attribution/{analysis_id}
+ *   GET    /api/v1/evidence/investigation/{case_id}
+ *   DELETE /api/v1/evidence/{evidence_id}
  */
 export const evidence = {
   async list(address?: string): Promise<EvidenceItem[]> {
@@ -25,25 +28,41 @@ export const evidence = {
     return records.map(mapBackendEvidenceToItem);
   },
 
-  async delete(_id: string): Promise<void> {
+  async listByAnalysisId(analysisId: string): Promise<EvidenceItem[]> {
+    if (isDemoMode()) {
+      const all = getDemoEvidence();
+      return all.slice(0, 3);
+    }
+    const records = await client.get<BackendEvidenceRecord[]>(
+      `/api/v1/evidence/attribution/${encodeURIComponent(analysisId)}`,
+      { timeoutMs: 15000 },
+    );
+    return records.map(mapBackendEvidenceToItem);
+  },
+
+  async listByInvestigation(caseId: string): Promise<EvidenceItem[]> {
+    if (isDemoMode()) {
+      const all = getDemoEvidence();
+      return all.slice(0, 3);
+    }
+    const records = await client.get<BackendEvidenceRecord[]>(
+      `/api/v1/evidence/investigation/${encodeURIComponent(caseId)}`,
+      { timeoutMs: 15000 },
+    );
+    return records.map(mapBackendEvidenceToItem);
+  },
+
+  async delete(id: string): Promise<void> {
     if (isDemoMode()) return;
-    throw new Error("Evidence deletion requires the Member 3 evidence service.");
+    await client.del(`/api/v1/evidence/${encodeURIComponent(id)}`);
   },
 
   async provenance(candidateId?: string): Promise<ProvenanceLink[]> {
     if (isDemoMode()) return getDemoProvenance();
     if (candidateId) {
-      // Future backend lookup
+      // Provenance is carried per evidence record; no separate lookup yet.
       return [];
     }
-    return [];
-  },
-};
-
-/** Audit log contract. WAITING FOR BACKEND auth/audit support. */
-export const audit = {
-  async list(): Promise<AuditEvent[]> {
-    if (isDemoMode()) return getDemoAuditEvents();
     return [];
   },
 };

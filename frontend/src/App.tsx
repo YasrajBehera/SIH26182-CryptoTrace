@@ -30,6 +30,7 @@ const WalletDetailPage = lazyPage(() => import("@/features/wallets/WalletDetailP
 const TransactionsPage = lazyPage(() => import("@/features/transactions/TransactionsPage"), "TransactionsPage");
 const GraphPage = lazyPage(() => import("@/features/graph/GraphPage"), "GraphPage");
 const VaspPage = lazyPage(() => import("@/features/vasp/VaspPage"), "VaspPage");
+const SahyogPage = lazyPage(() => import("@/features/sahyog/SahyogPage"), "SahyogPage");
 const EvidencePage = lazyPage(() => import("@/features/evidence/EvidencePage"), "EvidencePage");
 const RiskPage = lazyPage(() => import("@/features/risk/RiskPage"), "RiskPage");
 const ReportsPage = lazyPage(() => import("@/features/reports/ReportsPage"), "ReportsPage");
@@ -89,6 +90,7 @@ export default function App() {
                     <Route path="transactions" element={<PermissionBoundary permission="wallet.read"><TransactionsPage /></PermissionBoundary>} />
                     <Route path="graph" element={<PermissionBoundary permission="graph.read"><GraphPage /></PermissionBoundary>} />
                     <Route path="vasp" element={<PermissionBoundary permission="attribution.read"><VaspPage /></PermissionBoundary>} />
+                    <Route path="sahyog" element={<PermissionBoundary permission="wallet.analyze"><SahyogPage /></PermissionBoundary>} />
                     <Route path="evidence" element={<PermissionBoundary permission="evidence.read"><EvidencePage /></PermissionBoundary>} />
                     <Route path="risk" element={<PermissionBoundary permission="risk.read"><RiskPage /></PermissionBoundary>} />
                     <Route path="reports" element={<PermissionBoundary permission="report.export"><ReportsPage /></PermissionBoundary>} />

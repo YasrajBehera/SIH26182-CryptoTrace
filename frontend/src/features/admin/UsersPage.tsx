@@ -8,6 +8,7 @@ import type { AppUser, Role } from "@/api/types";
 
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Administrator",
+  senior_investigator: "Senior Investigator",
   investigator: "Investigator",
   analyst: "Analyst",
   reviewer: "Reviewer",

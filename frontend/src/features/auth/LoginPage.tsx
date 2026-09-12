@@ -16,11 +16,11 @@ export function LoginPage() {
 
   if (isAuthenticated) return <Navigate to={from} replace />;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setTrying(true);
-    const result = login(username, password);
+    const result = await login(username, password);
     setTrying(false);
     if (!result.ok) {
       setError(result.error ?? "Login failed.");
@@ -53,7 +53,7 @@ export function LoginPage() {
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. investigator"
+                placeholder="e.g. admin"
                 required
               />
             </Field>
@@ -81,15 +81,15 @@ export function LoginPage() {
 
         <Card style={{ marginTop: 16 }}>
           <p style={{ margin: "0 0 8px", fontWeight: 600, fontSize: "var(--text-sm)" }}>
-            DEMO AUTH — no real session is created
+            Demo access — Production users are created by an administrator.
           </p>
           <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-            Backend authentication is not implemented. Use any of these demo accounts (password:{" "}
-            <code>cryptotrace-demo</code>):
+            Login attempts hit the backend first (POST /api/v1/auth/login). If it is offline you can sign in with any
+            of these demo accounts (password: <code>cryptotrace-demo</code>):
           </p>
           <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
             {allDemoRoles().map((r) => (
-              <li key={r}>{r.replace("_", " ")}</li>
+              <li key={r}>{r.replace(/_/g, " ")}</li>
             ))}
           </ul>
         </Card>

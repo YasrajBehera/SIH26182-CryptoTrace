@@ -172,10 +172,12 @@ export function mapInvestigationResult(
     mapBackendCandidateToView(c, raw.analysis_id, i),
   );
 
-  // Backend pipeline currently runs on seeded synthetic transactions; surface
-  // that honestly instead of implying live chain data.
+  // The pipeline reports the data source explicitly (live/demo). When it is
+  // unambiguous (demo) or there is no evidence payload, call out that the
+  // transaction set is not verifiable live chain history.
   const evidenceCount = evidenceRecords.length || raw.evidence_count;
   const syntheticTransactions =
+    raw.data_source === "demo" ||
     evidenceRecords.length === 0 ||
     evidenceRecords.some((r) => r.source === "synthetic");
 

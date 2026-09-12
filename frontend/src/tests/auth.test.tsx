@@ -8,10 +8,11 @@ import { LoginPage } from "@/features/auth/LoginPage";
 import { ToastProvider } from "@/components/ui";
 
 function AuthProbe() {
-  const { isAuthenticated, can, user } = useAuth();
+  const { isAuthenticated, can, user, username } = useAuth();
   return (
     <div>
       <span data-testid="authed">{String(isAuthenticated)}</span>
+      <span data-testid="username">{username ?? "none"}</span>
       <span data-testid="name">{user?.name ?? "none"}</span>
       <span data-testid="role">{user?.role ?? "none"}</span>
       <span data-testid="can-create">{String(can("investigation.create"))}</span>
@@ -54,7 +55,7 @@ describe("demo auth + RBAC", () => {
     await user.click(screen.getByRole("button", { name: /Sign in/i }));
 
     expect(await screen.findByTestId("authed")).toHaveTextContent("true");
-    expect(screen.getByTestId("name")).toHaveTextContent("Arya Verma");
+    expect(screen.getByTestId("username")).toHaveTextContent("admin");
     expect(screen.getByTestId("role")).toHaveTextContent("admin");
     expect(screen.getByTestId("can-create")).toHaveTextContent("true");
     expect(screen.getByTestId("can-manage")).toHaveTextContent("true");
@@ -99,7 +100,7 @@ describe("demo auth + RBAC", () => {
     await user.type(pass, "wrong-password");
     await user.click(screen.getByRole("button", { name: /Sign in/i }));
 
-    expect(await screen.findByText(/Invalid demo credentials/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Invalid credentials/i)).toBeInTheDocument();
   });
 
   it("resolves can() to false for an unauthenticated session", () => {

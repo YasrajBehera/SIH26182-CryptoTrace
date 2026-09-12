@@ -214,13 +214,74 @@ class TestPipelineAPIEndpoint:
         assert resp3.status_code == 200
         assert len(resp3.json()) > 0
 
-    def test_legacy_stub_still_works(self, app_client):
+    def test_create_investigation_contract(self, app_client):
+        """The legacy stub POST /api/v1/investigations was replaced with a real
+        investigation create. Verify the new contract (id + persisted fields)."""
         resp = app_client.post(
             "/api/v1/investigations",
-            json={"address": "0xaabb000000000000000000000000000000000001"},
+            json={
+                "name": "Legacy stub replacement case",
+                "primary_wallet": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "description": "create-contract smoke",
+                "network": "eth",
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["id"].startswith("case-")
+        assert data["name"] == "Legacy stub replacement case"
+        assert data["primary_wallet"] == "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        assert data["status"] == "open"
+        assert data["risk"] == "unknown"
+
+    def test_analyze_binds_to_case(self, app_client):
+        """Full workflow: create case -> POST analyze?case_id -> evidence,
+        risk and analysis metadata attached to the persisted case."""
+        case = app_client.post(
+            "/api/v1/investigations",
+            json={
+                "name": "bound analysis case",
+                "primary_wallet": "0xaabb000000000000000000000000000000000001",
+            },
+        ).json()
+        resp = app_client.post(
+            "/api/v1/investigations/0xaabb000000000000000000000000000000000001/analyze",
+            params={"chain": "eth", "case_id": case["id"]},
         )
         assert resp.status_code == 200
-        assert resp.json()["status"] == "redirect"
+        data = resp.json()
+        assert data["case_id"] == case["id"]
+        assert data["data_source"] == "demo"
+
+        updated = app_client.get(f"/api/v1/investigations/{case['id']}")
+        assert updated.status_code == 200
+        body = updated.json()
+        assert body["status"] == "investigating"
+        assert body["evidence_count"] > 0
+        assert body["risk"] in {"critical", "high", "medium", "low", "unknown"}
+        assert body["latest_analysis_id"].startswith("attr-")
+
+        evidence = app_client.get(
+            f"/api/v1/evidence/investigation/{case['id']}"
+        )
+        assert evidence.status_code == 200
+        assert len(evidence.json()) == body["evidence_count"]
+        for ev in evidence.json():
+            assert ev["investigation_id"] == case["id"]
+
+    def test_analyze_with_case_id_mismatched_wallet_conflicts(self, app_client):
+        case = app_client.post(
+            "/api/v1/investigations",
+            json={
+                "name": "mismatch case",
+                "primary_wallet": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            },
+        ).json()
+        resp = app_client.post(
+            "/api/v1/investigations/0xaabb000000000000000000000000000000000001/analyze",
+            params={"chain": "eth", "case_id": case["id"]},
+        )
+        assert resp.status_code == 409
 
     def test_health_still_works(self, app_client):
         resp = app_client.get("/api/v1/health")

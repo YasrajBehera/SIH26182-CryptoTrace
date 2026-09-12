@@ -1,6 +1,7 @@
 import { isDemoMode } from "./config";
-import { getDemoCandidates } from "@/mock";
+import { getDemoCandidates, getDemoVaspNames } from "@/mock";
 import { investigations } from "./investigations";
+import { client } from "./client";
 import type { AttributionCandidate } from "./types";
 
 /**
@@ -27,5 +28,24 @@ export const attribution = {
   async get(id: string): Promise<AttributionCandidate | null> {
     if (isDemoMode()) return getDemoCandidates().find((c) => c.id === id) ?? null;
     return null;
+  },
+
+  /**
+   * Known VASP entity names for global search.
+   * Live: GET /api/v1/intelligence/vasp/names (curated directory).
+   * Demo: labeled synthetic directory.
+   * Never throws — search degrades to an empty list on failure.
+   */
+  async vaspNames(): Promise<string[]> {
+    if (isDemoMode()) return getDemoVaspNames();
+    try {
+      const res = await client.get<{ chain: string; vasp_names: string[] }>("/api/v1/intelligence/vasp/names", {
+        query: { chain: "eth" },
+        timeoutMs: 8000,
+      });
+      return res.vasp_names ?? [];
+    } catch {
+      return [];
+    }
   },
 };

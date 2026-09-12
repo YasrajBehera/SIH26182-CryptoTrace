@@ -15,6 +15,7 @@ build/
 .env
 .env.*
 !.env.example
+backend/.auth_dev_secret
 
 # IDE/OS
 .vscode/

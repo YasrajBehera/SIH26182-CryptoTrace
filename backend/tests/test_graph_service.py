@@ -75,6 +75,49 @@ def test_bfs_returns_neighbors_by_depth(fake_session, fake_driver):
     assert rows[1]["wallet_id"] == "eth:0xcc"
 
 
+def test_bfs_depth_injected_as_validated_literal_not_parameter(fake_session, fake_driver):
+    service.bfs(fake_driver, "eth:0xaa", max_depth=3)
+    query, params = fake_session.queries[-1]
+    assert "[*1..3]" in query
+    assert "$max_depth" not in query
+    assert "max_depth" not in params
+    assert params["max_nodes"] == 100
+    assert params["wallet_id"] == "eth:0xaa"
+
+
+def test_bfs_max_depth_validation(fake_session, fake_driver):
+    for bad in (0, -1, 51, "abc", None, "3; MATCH (x) DETACH DELETE x"):
+        with pytest.raises((ValueError, TypeError)):
+            service.bfs(fake_driver, "eth:0xaa", max_depth=bad)
+
+
+def test_bfs_max_depth_boundary_allowed(fake_session, fake_driver):
+    service.bfs(fake_driver, "eth:0xaa", max_depth=service.MAX_BFS_DEPTH)
+    query, _ = fake_session.queries[-1]
+    assert f"[*1..{service.MAX_BFS_DEPTH}]" in query
+
+
+def test_bfs_runs_on_live_neo4j_no_syntax_error():
+    try:
+        from graph.neo4j_client import create_driver, is_neo4j_healthy
+
+        driver = create_driver()
+    except Exception:
+        pytest.skip("neo4j client/driver unavailable")
+    try:
+        if not is_neo4j_healthy(driver):
+            pytest.skip("live Neo4j container not reachable")
+        rows = service.bfs(
+            driver,
+            "eth:0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+            max_depth=3,
+        )
+        assert isinstance(rows, list)
+        assert all(set(row) >= {"wallet_id", "address", "chain", "depth"} for row in rows)
+    finally:
+        driver.close()
+
+
 def test_dfs_returns_distinct_wallets(fake_session, fake_driver):
     rows = service.dfs(fake_driver, "eth:0xaa", max_depth=4)
     assert rows[0]["wallet_id"] == "eth:0xbb"

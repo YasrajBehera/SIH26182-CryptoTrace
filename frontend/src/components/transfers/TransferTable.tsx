@@ -3,8 +3,10 @@ import { DataTable } from "@/components/ui/DataTable";
 import type { ColumnDef } from "@/components/ui/DataTable";
 import { Badge, DemoBadge } from "@/components/ui/Badges";
 import { ShortAddress } from "@/components/ui/Address";
-import { formatDate, formatAmount } from "@/lib/format";
+import { formatDate, formatAmount, formatUsd } from "@/lib/format";
 import { shortenHash } from "@/lib/format";
+import { estimateUsd } from "@/api/marketdata";
+import { useEthPrice } from "@/hooks/useEthPrice";
 
 const DIRECTION_COLOR: Record<string, string> = {
   in: "status-success",
@@ -15,7 +17,7 @@ export function directionBadge(direction: BlockchainTransfer["direction"]) {
   return <Badge className={DIRECTION_COLOR[direction]}>{direction === "in" ? "Incoming" : "Outgoing"}</Badge>;
 }
 
-export const transferColumns = (): ColumnDef<BlockchainTransfer>[] => [
+export const transferColumns = (priceUsd?: number | null): ColumnDef<BlockchainTransfer>[] => [
   {
     key: "hash",
     header: "Transaction",
@@ -62,6 +64,20 @@ export const transferColumns = (): ColumnDef<BlockchainTransfer>[] => [
     sortValue: (t) => Number(t.value) || 0,
   },
   {
+    key: "usd",
+    header: "≈ USD",
+    align: "right",
+    cell: (t) => {
+      const v = estimateUsd(t.value, priceUsd ?? null, t.asset);
+      return v !== null ? (
+        <span className="mono" style={{ color: "var(--text-muted)" }} title="Reference-rate estimate">{formatUsd(v)}</span>
+      ) : (
+        <span className="mono" style={{ color: "var(--text-faint)" }} title="No reference rate for this asset">—</span>
+      );
+    },
+    sortValue: (t) => estimateUsd(t.value, priceUsd ?? null, t.asset) ?? 0,
+  },
+  {
     key: "block",
     header: "Block",
     align: "right",
@@ -89,6 +105,7 @@ export interface TransferTableProps {
 }
 
 export function TransferTable({ transfers, demo, onRowClick, pagination }: TransferTableProps) {
+  const priceUsd = useEthPrice();
   return (
     <div>
       {demo ? (
@@ -98,7 +115,7 @@ export function TransferTable({ transfers, demo, onRowClick, pagination }: Trans
       ) : null}
       <DataTable
         rows={transfers}
-        columns={transferColumns()}
+        columns={transferColumns(priceUsd)}
         rowKey={(t) => `${t.transaction_hash}-${t.direction}-${t.from_address}-${t.to_address}`}
         onRowClick={onRowClick}
         pagination={pagination ?? { pageSize: 15 }}

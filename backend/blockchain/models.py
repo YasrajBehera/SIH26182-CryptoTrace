@@ -49,6 +49,7 @@ class PaginationInfo(BaseModel):
     max_transfers: int = Field(..., description="Maximum number of transfers returned")
     fetched: int = Field(..., description="Number of transfers actually fetched")
     truncated: bool = Field(False, description="True if the result was truncated by a limit")
+    skipped: int = Field(0, description="Malformed provider records skipped")
 
 
 class WalletTransfers(BaseModel):

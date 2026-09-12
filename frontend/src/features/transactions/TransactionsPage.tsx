@@ -32,6 +32,7 @@ export function TransactionsPage() {
   const [q, setQ] = useState(params.get("hash") ?? "");
   const [direction, setDirection] = useState("all");
   const [asset, setAsset] = useState("all");
+  const [chain, setChain] = useState("all");
   const [minAmount, setMinAmount] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -43,6 +44,10 @@ export function TransactionsPage() {
     () => Array.from(new Set(transfers.map((t) => t.asset))).sort(),
     [transfers],
   );
+  const chains = useMemo(
+    () => Array.from(new Set(transfers.map((t) => t.chain))).sort(),
+    [transfers],
+  );
 
   const filtered = useMemo(
     () =>
@@ -50,6 +55,7 @@ export function TransactionsPage() {
         if (q && !t.transaction_hash.toLowerCase().includes(q.toLowerCase())) return false;
         if (direction !== "all" && t.direction !== direction) return false;
         if (asset !== "all" && t.asset !== asset) return false;
+        if (chain !== "all" && t.chain !== chain) return false;
         if (minAmount && (Number(t.value) || 0) < Number(minAmount)) return false;
         if (fromDate && t.block_timestamp && new Date(t.block_timestamp) < new Date(`${fromDate}T00:00:00Z`)) {
           return false;
@@ -59,7 +65,7 @@ export function TransactionsPage() {
         }
         return true;
       }),
-    [transfers, q, direction, asset, minAmount, fromDate, toDate],
+    [transfers, q, direction, asset, chain, minAmount, fromDate, toDate],
   );
 
   const submit = (e: React.FormEvent) => {
@@ -144,6 +150,12 @@ export function TransactionsPage() {
           <option value="all">All assets</option>
           {assets.map((a) => (
             <option key={a} value={a}>{a}</option>
+          ))}
+        </Select>
+        <Select value={chain} onChange={(e) => setChain(e.target.value)} aria-label="Chain" style={{ maxWidth: 120 }}>
+          <option value="all">All chains</option>
+          {chains.map((c) => (
+            <option key={c} value={c}>{c.toUpperCase()}</option>
           ))}
         </Select>
         <Input

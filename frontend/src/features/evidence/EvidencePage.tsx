@@ -2,6 +2,7 @@ import { useSearchParams } from "react-router-dom";
 import { PageHeader, Button, Card, DemoBadge, Input, Field, Textarea, EmptyState, LoadingBlock, Badge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { evidence } from "@/api/evidence";
+import { getLastAnalysis } from "@/api/investigations";
 import { EvidenceCard, ProvenanceChain } from "@/components/evidence/EvidenceComponents";
 import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
@@ -14,16 +15,30 @@ export function EvidencePage() {
   const [params] = useSearchParams();
   const wallet = params.get("wallet") ?? "";
   const focus = params.get("focus") ?? "";
+  const analysisIdParam = params.get("analysis_id") ?? "";
+  const caseParam = params.get("case") ?? "";
   const { isDemo } = useDataSource();
   const { can } = useAuth();
   const { push } = useToast();
+
+  const lastAnalysis = getLastAnalysis();
+  const effectiveAnalysisId = analysisIdParam || lastAnalysis?.analysisId || "";
+  const effectiveWallet = wallet || lastAnalysis?.address || "";
 
   const [title, setTitle] = useState("");
   const [source, setSource] = useState("");
   const [relatedWallet, setRelatedWallet] = useState("");
   const [notes, setNotes] = useState("");
 
-  const { data: items, loading, error, reload } = useApi(() => evidence.list(wallet || undefined), [wallet]);
+  const { data: items, loading, error, reload } = useApi(
+    () =>
+      caseParam
+        ? evidence.listByInvestigation(caseParam)
+        : effectiveAnalysisId
+          ? evidence.listByAnalysisId(effectiveAnalysisId)
+          : evidence.list(effectiveWallet || undefined),
+    [caseParam, effectiveAnalysisId, effectiveWallet],
+  );
   const { data: provenance } = useApi(() => evidence.provenance(), []);
 
   const walletProblem = relatedWallet ? validateAddressInput(relatedWallet) : null;
@@ -41,8 +56,10 @@ export function EvidencePage() {
     if (walletProblem) return;
     push({
       kind: "info",
-      title: "Evidence attachment (demo)",
-      description: "Persisting evidence requires the Member 3 evidence service. The item was not saved.",
+      title: "Evidence attachment (workspace)",
+      description: isDemo
+        ? "Demo evidence is read-only here. Pipeline records already carry provenance."
+        : "Manual attachment requires an active analysis workspace (attribution id). Pipeline evidence records include provenance automatically.",
     });
     setTitle("");
     setSource("");
@@ -54,7 +71,7 @@ export function EvidencePage() {
     if (!window.confirm(`Delete evidence ${item.id}? This action cannot be undone.`)) return;
     try {
       await evidence.delete(item.id);
-      push({ kind: "ok", title: "Evidence deleted", description: `${item.id} was removed (demo — not persisted).` });
+      push({ kind: "ok", title: "Evidence deleted", description: isDemo ? `${item.id} was removed from the demo set.` : `${item.id} was removed from the evidence store.` });
       reload();
     } catch (err) {
       push({ kind: "error", title: "Delete failed", description: err instanceof Error ? err.message : "Unknown error." });
@@ -65,7 +82,7 @@ export function EvidencePage() {
     <div className="page">
       <PageHeader
         title="Evidence"
-        subtitle="Collect, classify, and preserve evidence with provenance. Forwarding to checksummed store is pending."
+        subtitle="Collect, classify, and preserve evidence with provenance."
         crumbs={[{ label: "Evidence" }]}
         actions={isDemo ? <DemoBadge label="SYNTHETIC EVIDENCE" /> : undefined}
       />
@@ -100,9 +117,14 @@ export function EvidencePage() {
         </Card>
       ) : null}
 
-      {wallet ? (
+      {effectiveWallet ? (
         <Card title="Filtered by wallet">
-          <span className="mono" data-testid="evidence-wallet-filter">{wallet}</span>
+          <span className="mono" data-testid="evidence-wallet-filter">{effectiveWallet}</span>
+          {effectiveAnalysisId ? (
+            <span style={{ marginLeft: 8 }}>
+              <Badge className="status-open">analysis: {effectiveAnalysisId.slice(0, 12)}…</Badge>
+            </span>
+          ) : null}
         </Card>
       ) : null}
 

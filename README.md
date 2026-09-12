@@ -4,7 +4,64 @@ Explainable cross-chain VASP attribution and blockchain investigation platform f
 
 ## Current milestone
 
-Wallet address -> API -> normalized transaction placeholder -> investigation-ready JSON response.
+Production-style end-to-end investigation demo: wallet -> normalized transfers -> live graph
+(BFS/temporal/fund-flow) -> attribution candidates with explainable confidence -> evidence with
+provenance and audit trail -> investigation-ready JSON and PDF reports, plus admin/RBAC, audit
+logging, rate limiting and a full test suite (backend 334+ passing, frontend 50 passing).
+
+## REAL vs DEMO
+
+The frontend runs in two modes, auto-negotiated on boot by probing `GET /api/v1/health`:
+
+- **live** — backend reachable; all reads/writes call `client.ts` (FastAPI).
+- **demo** — backend unreachable or feature not yet implemented; synthetic clearly-labeled data
+  (`isDemo: true`), no network calls. The UI shows a persistent DEMO DATA banner.
+
+| Feature | Live (backend) | Demo / Synthetic fallback | Status |
+| --- | --- | --- | --- |
+| Auth / login / token (JWT) | `POST /api/v1/auth/login` | seeded demo matrix | LIVE/REAL |
+| RBAC permissions | `GET /api/v1/admin/users/roles` | seeded matrix | LIVE/REAL |
+| Wallet transfers | `GET /api/v1/wallets/{address}/transfers` | seeded data | LIVE/REAL |
+| Graph BFS / temporal / fund-flow | `/api/v1/graph/wallets/{id}/bfs`, `/temporal-flow`, `/fund-flow` | `getDemoGraph()` when Neo4j unreachable | LIVE/REAL (Neo4j) or DEMO/SYNTHETIC |
+| Graph health | `GET /api/v1/graph/health` | `synthetic` when probe fails | honest provider badge |
+| Attribution analysis | `POST /api/v1/investigations/{address}/analyze` | `getDemoCandidates()` | LIVE/REAL (pipeline) |
+| VASP names | `GET /api/v1/intelligence/vasp/names` | `getDemoVaspNames()` | LIVE/REAL |
+| Evidence / provenance | `GET /api/v1/evidence/address/{a}`, `GET /api/v1/evidence/attribution/{analysis_id}` | `getDemoProvenance()` | LIVE/REAL (in-memory) |
+| Cases / investigations | no CRUD endpoint (live `[]`) | `getDemoInvestigations()` | NOT CONFIGURED |
+| Case creation | throws in live | runtime demo store (survives session) | DEMO only |
+| User directory (admin) | `GET/POST/PATCH/DELETE /api/v1/admin/users` | seeded records | LIVE/REAL (DB or in-memory) |
+| Audit log | `GET /api/v1/audit` | demo events | LIVE/REAL |
+| Reports | server-side export **not implemented** | browser print / preview | NOT CONFIGURED |
+| SAHYOG referral intake | no backend adapter | synthetic referrals only | DEMO/INTEGRATION-READY |
+| ETH/USD fiat estimate | CoinGecko `simple/price` (1h cache) | constant `DEMO_ETH_USD = 3500` | LIVE/REAL |
+
+Manual override: Settings -> Data source picker (`DataSourceProvider` / `setMode`).
+
+Demo accounts use password `cryptotrace-demo` (admin, senior_investigator, investigator, analyst, reviewer, read_only).
+
+## Single investigation flow
+
+One investigation/analysis context threads through the whole UI. The backend
+pipeline `POST /api/v1/investigations/{address}/analyze` returns an `analysis_id`;
+the frontend stores it in `sessionStorage` (`cryptotrace.lastAnalysis`) so
+downstream pages reuse the same address/analysis without re-entry:
+
+`Login → Dashboard → Wallet Lookup → Transfers → Analysis (graph→VASP→evidence) → Transactions → Graph / Fund Flow → Risk → VASP Attribution → Evidence (with ?analysis_id=) → Reports → SAHYOG → Audit`
+
+- The dashboard workflow strip lights up to the last completed stage.
+- The evidence workspace reads `?analysis_id=<id>` (or the last stored analysis)
+  and calls `GET /api/v1/evidence/attribution/{analysis_id}`.
+- Live wallet-analysis links carry the address into graph, transactions, and evidence.
+
+## Honest status vocabulary
+
+The UI never claims a feature is live when it is not. Labels used:
+
+- **LIVE / REAL** — served by a reachable backend endpoint.
+- **DEMO / SYNTHETIC** — labeled synthetic data (fallback or on-demand pipeline over synthetic transactions).
+- **NOT CONFIGURED** — feature genuinely needs a backend that is not implemented
+  (case persistence CRUD, server-side PDF export).
+- **UNAVAILABLE / ERROR** — endpoint reachable concept exists but the provider/engine is down (e.g. Neo4j disconnected: graph shows a "Synthetic fallback — Neo4j unavailable" badge).
 
 ## Docs
 
@@ -42,6 +99,16 @@ uvicorn app.main:app --reload
 ```
 
 Open http://127.0.0.1:8000/docs
+
+Notes:
+
+- Swagger UI renders because the backend relaxes the Content-Security-Policy
+  only for `/docs`/`/openapi.json` (the Swagger CDN); all API responses keep
+  the strict policy.
+- Without an `AUTH_SECRET` env var, development generates one random token
+  secret and persists it to a git-ignored `backend/.auth_dev_secret`, so login
+  tokens keep verifying after backend restarts (no more surprise `401`s). Set
+  `AUTH_SECRET` in production.
 
 ## Member 1 - Blockchain data layer
 
@@ -133,6 +200,17 @@ python -m pytest
 cd frontend
 npm install
 npm run dev
+```
+
+Open the printed Vite URL (default http://127.0.0.1:5173). The app auto-detects the backend;
+run both to get live data.
+
+### Frontend checks
+
+```powershell
+npm test          # vitest suite (50 tests)
+npm run lint      # eslint src --max-warnings 0
+npm run build     # tsc --noEmit && vite build
 ```
 
 ## Git workflow

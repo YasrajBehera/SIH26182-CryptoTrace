@@ -1,27 +1,39 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, loadEnv } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
 
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-    },
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      "/api": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  const proxyTarget =
+    env.VITE_API_PROXY_TARGET ||
+    process.env.VITE_API_PROXY_TARGET ||
+    "http://127.0.0.1:8000";
+
+  return {
+    plugins: [react()],
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("./src", import.meta.url)),
       },
     },
-  },
-  test: {
-    environment: "jsdom",
-    globals: true,
-    setupFiles: ["./src/tests/setup.ts"],
-    css: true,
-  },
+    server: {
+      port: 5173,
+      proxy: {
+        "/api": {
+          target: proxyTarget,
+          changeOrigin: true,
+        },
+      },
+    },
+    preview: {
+      port: 4173,
+      host: true,
+    },
+    test: {
+      environment: "jsdom",
+      globals: true,
+      setupFiles: ["./src/tests/setup.ts"],
+      css: true,
+    },
+  };
 });

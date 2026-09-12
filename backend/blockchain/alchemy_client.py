@@ -144,7 +144,14 @@ class AlchemyClient:
                 f"Blockchain provider returned HTTP {response.status_code}."
             )
 
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError:
+            # A non-JSON body (e.g. an HTML error page from a misconfigured or
+            # expired key) must surface as a provider error, not a crash.
+            raise AlchemyAPIError(
+                "Blockchain provider returned a non-JSON response."
+            )
         if "error" in data:
             message = data["error"].get("message") or "unknown provider error"
             raise AlchemyAPIError(f"Blockchain provider error: {message}")

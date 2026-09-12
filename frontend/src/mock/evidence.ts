@@ -39,7 +39,7 @@ export const demoEvidence: EvidenceItem[] = [
     id: "E-020",
     type: "system_observation",
     title: "Cluster graph snapshot at depth 3",
-    source: "Graph analysis stub",
+    source: "Synthetic graph analysis (demo)",
     createdBy: "system",
     createdAt: "2026-09-07T19:41:00Z",
     relatedWallet: "0x7c5bd5c9cde06b8c998a6a66dbdc2e9e8e2f4b13",
