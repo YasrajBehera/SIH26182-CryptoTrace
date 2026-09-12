@@ -50,13 +50,22 @@ def wallet_neighbors(
     max_nodes: int = Query(100, ge=1, le=1000),
     driver: Driver = Depends(get_driver),
 ):
-    nodes = service.neighbors(driver, wallet_id, depth=depth, max_nodes=max_nodes)
+    nodes = service.neighbors(
+        driver,
+        wallet_id,
+        depth=depth,
+        max_nodes=max_nodes,
+    )
+
     return schemas.BFSResponse(
         wallet_id=wallet_id,
         max_depth=depth,
-        nodes=[schemas.Neighbor(**node) for node in nodes],
+        nodes=[
+            schemas.Neighbor(**node)
+            for node in nodes
+        ],
+        edges=[],
     )
-
 
 @router.get("/wallets/{wallet_id}/bfs", response_model=schemas.BFSResponse)
 def wallet_bfs(
@@ -65,13 +74,22 @@ def wallet_bfs(
     max_nodes: int = Query(100, ge=1, le=1000),
     driver: Driver = Depends(get_driver),
 ):
-    nodes = service.bfs(driver, wallet_id, max_depth=depth, max_nodes=max_nodes)
+    nodes = service.bfs(
+        driver,
+        wallet_id,
+        max_depth=depth,
+        max_nodes=max_nodes,
+    )
+
     return schemas.BFSResponse(
         wallet_id=wallet_id,
         max_depth=depth,
-        nodes=[schemas.Neighbor(**node) for node in nodes],
+        nodes=[
+            schemas.Neighbor(**node)
+            for node in nodes
+        ],
+        edges=[],
     )
-
 
 @router.get("/wallets/{wallet_id}/dfs", response_model=schemas.DFSResponse)
 def wallet_dfs(
@@ -152,7 +170,6 @@ def temporal_path(
     result = service.temporal_path_analysis(driver, source, target)
     return schemas.TemporalPathResponse(**result)
 
-
 @router.get("/fund-flow", response_model=schemas.FundFlowResponse)
 def fund_flow(
     source: str = Query(..., pattern=_WALLET_PATTERN),
@@ -161,7 +178,6 @@ def fund_flow(
 ):
     result = service.fund_flow_analysis(driver, source, target)
     return schemas.FundFlowResponse(**result)
-
 
 @router.get("/wallets/{wallet_id}/temporal-flow", response_model=schemas.TemporalFlowResponse)
 def wallet_temporal_flow(

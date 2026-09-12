@@ -28,10 +28,21 @@ class Neighbor(WalletSummary):
     depth: int
 
 
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    tx_id: Optional[str] = None
+    tx_hash: Optional[str] = None
+    chain: Optional[str] = None
+    amount: Optional[str] = None
+    timestamp: Optional[int] = None
+
+
 class BFSResponse(BaseModel):
     wallet_id: str
     max_depth: int
     nodes: List[Neighbor] = Field(default_factory=list)
+    edges: List[GraphEdge] = Field(default_factory=list)
 
 
 class DFSResponse(BaseModel):
@@ -109,17 +120,7 @@ class TemporalPathEdge(BaseModel):
     timestamp: int
 
 
-class TemporalPathResponse(BaseModel):
-    source: str
-    destination: str
-    path: List[str] = Field(default_factory=list)
-    edges: List[TemporalPathEdge] = Field(default_factory=list)
-    is_temporally_valid: bool = True
-    total_hops: Optional[int] = None
-    found: bool = False
-
-
-class FundFlowTransaction(BaseModel):
+class TemporalPathTransaction(BaseModel):
     tx_hash: str
     chain: str
     sender: str
@@ -127,14 +128,39 @@ class FundFlowTransaction(BaseModel):
     amount: str
     timestamp: int
 
+class TemporalPathResponse(BaseModel):
+    source: str
+    destination: str
+    path: List[str] = Field(default_factory=list)
+    edges: List[TemporalPathTransaction] = Field(default_factory=list)
+    is_temporally_valid: bool = False
+    total_hops: int = 0
+    found: bool = False
+
 
 class FundFlowResponse(BaseModel):
     source: str
     destination: str
     wallet_path: List[str] = Field(default_factory=list)
-    hop_count: Optional[int] = None
+    hop_count: int = 0
     transactions: List[FundFlowTransaction] = Field(default_factory=list)
     found: bool = False
+
+
+class FundFlowTransaction(BaseModel):
+
+    tx_hash: str
+
+    chain: str
+
+    sender: str
+
+    receiver: str
+
+    amount: str
+
+    timestamp: int
+
 
 
 class TemporalFlowResponse(BaseModel):
