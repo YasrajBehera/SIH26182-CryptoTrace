@@ -1,6 +1,7 @@
+import { Link } from "react-router-dom";
 import type { EvidenceItem, ProvenanceLink } from "@/api/types";
 import { Card, Badge, DemoBadge, Address } from "@/components/ui";
-import { formatDate } from "@/lib/format";
+import { chainLabel, formatTimestamp } from "@/lib/format";
 
 const TYPE_LABEL: Record<EvidenceItem["type"], string> = {
   blockchain_transaction: "Blockchain transaction",
@@ -60,23 +61,53 @@ export function EvidenceCard({
         <div className="stack">
           <div className="detail-row">
             <span className="detail-label">Source</span>
-            <span className="detail-value">{item.source}</span>
+            <span className="detail-value">
+              {item.isDemo
+                ? "Synthetic demo data"
+                : item.source === "chain"
+                  ? `Blockchain · ${chainLabel(item.chain)}`
+                  : item.source}
+            </span>
           </div>
+          {item.chain ? (
+            <div className="detail-row">
+              <span className="detail-label">Chain</span>
+              <span className="detail-value">{chainLabel(item.chain)}</span>
+            </div>
+          ) : null}
           <div className="detail-row">
             <span className="detail-label">Created by</span>
             <span className="detail-value">{item.createdBy}</span>
           </div>
           <div className="detail-row">
             <span className="detail-label">Created at</span>
-            <span className="detail-value">{formatDate(item.createdAt)}</span>
+            <span className="detail-value">{formatTimestamp(item.createdAt)}</span>
           </div>
+          {item.timestamp ? (
+            <div className="detail-row">
+              <span className="detail-label">Record timestamp</span>
+              <span className="detail-value">{formatTimestamp(item.timestamp)}</span>
+            </div>
+          ) : null}
+          {item.analysisId ? (
+            <div className="detail-row">
+              <span className="detail-label">Analysis ID</span>
+              <span className="detail-value">
+                <Link to={`/evidence?analysis_id=${encodeURIComponent(item.analysisId)}`} style={{ color: "var(--cyan)" }} title="Open evidence for this analysis">
+                  <span className="mono">{item.analysisId}</span>
+                </Link>
+              </span>
+            </div>
+          ) : null}
         </div>
         <div className="stack">
           {item.relatedWallet ? (
             <div className="detail-row">
               <span className="detail-label">Related wallet</span>
               <span className="detail-value">
-                <Address address={item.relatedWallet} chain="eth" silent />
+                <Link to={`/wallets/${encodeURIComponent(item.relatedWallet)}`} style={{ color: "var(--cyan)" }} title="Open wallet investigation">
+                  <Address address={item.relatedWallet} chain="eth" silent />
+                </Link>
               </span>
             </div>
           ) : null}
@@ -84,7 +115,13 @@ export function EvidenceCard({
             <div className="detail-row">
               <span className="detail-label">Related tx</span>
               <span className="detail-value mono" style={{ fontSize: 11.5 }}>
-                {item.relatedTransaction.slice(0, 18)}…
+                <Link
+                  to={`/transactions?wallet=${encodeURIComponent(item.relatedWallet ?? "")}&hash=${encodeURIComponent(item.relatedTransaction)}`}
+                  style={{ color: "var(--cyan)" }}
+                  title="Open this transaction in the explorer"
+                >
+                  {item.relatedTransaction.slice(0, 18)}…
+                </Link>
               </span>
             </div>
           ) : null}

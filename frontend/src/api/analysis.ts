@@ -59,7 +59,7 @@ const FACTOR_LABELS: Record<keyof BackendScoreBreakdown, string> = {
 
 const FACTOR_DESCRIPTIONS: Record<keyof BackendScoreBreakdown, string> = {
   graph_proximity: "Hop distance from known VASP addresses in the transaction graph.",
-  known_address_match: "Direct match against the curated (synthetic) VASP address list.",
+  known_address_match: "Direct match against the curated public VASP address directory.",
   temporal_consistency: "Regularity of transaction timing against exchange-like patterns.",
   transaction_flow: "Counterparty and in/out flow structure of the wallet.",
   cluster_evidence: "Community-cluster overlap with known VASP addresses.",
@@ -156,6 +156,9 @@ export function mapBackendEvidenceToItem(record: BackendEvidenceRecord): Evidenc
     createdAt: record.provenance?.created_at ?? new Date(0).toISOString(),
     relatedWallet: record.address ?? undefined,
     relatedTransaction: record.tx_hash ?? undefined,
+    chain: record.chain ?? undefined,
+    analysisId: record.attribution_id ?? undefined,
+    timestamp: record.timestamp ?? null,
     reliability: evidenceReliability(record.confidence),
     notes: record.description || undefined,
     isDemo: synthetic,
@@ -172,14 +175,16 @@ export function mapInvestigationResult(
     mapBackendCandidateToView(c, raw.analysis_id, i),
   );
 
-  // The pipeline reports the data source explicitly (live/demo). When it is
-  // unambiguous (demo) or there is no evidence payload, call out that the
-  // transaction set is not verifiable live chain history.
+  // The pipeline reports the data source explicitly (live/demo). The ONLY
+  // source of truth for whether transactions are real chain history is the
+  // pipeline's `data_source` — never the number of evidence records returned
+  // (evidence fetch is best-effort; a live analysis with zero evidence rows is
+  // still LIVE on-chain data, not synthetic). This prevents a live run from
+  // being mislabeled "SYNTHETIC DATA" merely because evidence was not linked
+  // yet.
   const evidenceCount = evidenceRecords.length || raw.evidence_count;
-  const syntheticTransactions =
-    raw.data_source === "demo" ||
-    evidenceRecords.length === 0 ||
-    evidenceRecords.some((r) => r.source === "synthetic");
+  const syntheticTransactions = raw.data_source === "demo";
+  const dataSource: "live" | "demo" = syntheticTransactions ? "demo" : "live";
 
   return {
     address: (raw.address ?? requestedAddress).toLowerCase(),
@@ -191,6 +196,7 @@ export function mapInvestigationResult(
     evidenceCount,
     disclaimer: raw.disclaimer,
     isDemo: false,
+    dataSource,
     syntheticTransactions,
     intelligence: mapBackendIntelligenceToView(raw.address_intelligence),
     candidates,

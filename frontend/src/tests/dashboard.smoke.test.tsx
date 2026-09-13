@@ -58,6 +58,10 @@ describe("Investigator dashboard", () => {
     const unavailable = screen.getAllByText("Not available");
     expect(unavailable.length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Not connected").length).toBeGreaterThanOrEqual(1);
+    // No live session in the test harness — the status card must tell the user
+    // to sign in and must never claim a fabricated "Connected" state.
+    expect(screen.getByText("Sign in to connect")).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
   });
 
   it("does not claim verified ownership for VASP candidates", async () => {

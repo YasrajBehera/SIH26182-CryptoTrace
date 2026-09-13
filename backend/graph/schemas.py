@@ -36,6 +36,7 @@ class GraphEdge(BaseModel):
     chain: Optional[str] = None
     amount: Optional[str] = None
     timestamp: Optional[int] = None
+    block_number: Optional[int] = None
 
 
 class BFSResponse(BaseModel):
@@ -134,7 +135,7 @@ class TemporalPathResponse(BaseModel):
     path: List[str] = Field(default_factory=list)
     edges: List[TemporalPathTransaction] = Field(default_factory=list)
     is_temporally_valid: bool = False
-    total_hops: int = 0
+    total_hops: Optional[int] = None
     found: bool = False
 
 
@@ -142,7 +143,7 @@ class FundFlowResponse(BaseModel):
     source: str
     destination: str
     wallet_path: List[str] = Field(default_factory=list)
-    hop_count: int = 0
+    hop_count: Optional[int] = None
     transactions: List[FundFlowTransaction] = Field(default_factory=list)
     found: bool = False
 

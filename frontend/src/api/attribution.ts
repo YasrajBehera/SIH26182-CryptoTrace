@@ -1,8 +1,13 @@
 import { isDemoMode } from "./config";
 import { getDemoCandidates, getDemoVaspNames } from "@/mock";
 import { investigations } from "./investigations";
+import { mapBackendIntelligenceToView } from "./analysis";
 import { client } from "./client";
-import type { AttributionCandidate } from "./types";
+import type {
+  AddressIntelligenceView,
+  AttributionCandidate,
+  BackendAddressIntelligence,
+} from "./types";
 
 /**
  * VASP intelligence / attribution frontend contract.
@@ -28,6 +33,27 @@ export const attribution = {
   async get(id: string): Promise<AttributionCandidate | null> {
     if (isDemoMode()) return getDemoCandidates().find((c) => c.id === id) ?? null;
     return null;
+  },
+
+  /**
+   * Direct known-address directory lookup for a single wallet. Distinct from
+   * the behavioral/graph candidate ranking: this answers "is this exact
+   * address listed in the curated VASP directory?" using the cheap
+   * GET /api/v1/intelligence/address/{address} endpoint (no analysis pipeline,
+   * no blockchain fetch). Null when the wallet has no direct directory match.
+   */
+  async intelligence(address: string): Promise<AddressIntelligenceView | null> {
+    if (isDemoMode()) return null;
+    // Not a known VASP in the demo directory either — mirror live shape.
+    try {
+      const raw = await client.get<BackendAddressIntelligence>(
+        `/api/v1/intelligence/address/${encodeURIComponent(address)}`,
+        { query: { chain: "eth", data_source: "live" }, timeoutMs: 8000 },
+      );
+      return mapBackendIntelligenceToView(raw);
+    } catch {
+      return null;
+    }
   },
 
   /**

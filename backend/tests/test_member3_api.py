@@ -31,11 +31,14 @@ class TestIntelligenceAPI:
         data = resp.json()
         assert data["is_known_vasp"] is False
 
-    def test_vasp_names(self, client):
+    def test_vasp_names_serves_curated_directory(self, client):
         resp = client.get("/api/v1/intelligence/vasp/names", params={"chain": "eth"})
         assert resp.status_code == 200
         data = resp.json()
-        assert "SynthExchange_A" in data["vasp_names"]
+        assert "Binance" in data["vasp_names"]
+        assert "Coinbase" in data["vasp_names"]
+        # Synthetic seed names are demo-only and never surface through the API.
+        assert "SynthExchange_A" not in data["vasp_names"]
 
 
 class TestAttributionAPI:

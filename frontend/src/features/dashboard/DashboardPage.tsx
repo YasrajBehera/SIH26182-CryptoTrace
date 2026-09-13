@@ -7,7 +7,7 @@ import { investigations, activity, getLastAnalysis } from "@/api/investigations"
 import { evidence } from "@/api/evidence";
 import { attribution } from "@/api/attribution";
 import { graph } from "@/api/graph";
-import { useDataSource } from "@/app/DataSourceContext";
+import { system } from "@/api/system";
 import { useAuth } from "@/auth/AuthContext";
 import { InvestigationTable } from "@/components/investigations/InvestigationTable";
 import { InvestigationWorkflow } from "@/components/investigations/InvestigationWorkflow";
@@ -57,7 +57,6 @@ function prettyLabel(value: string): string {
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { mode } = useDataSource();
   const { can } = useAuth();
   const demo = isDemoMode();
 
@@ -71,9 +70,11 @@ export function DashboardPage() {
     { enabled: demo },
   );
 
-  // Honest graph-engine status: only "neo4j" means the live graph is usable.
-  const { data: graphHealth } = useApi(() => graph.health(), [], { enabled: !demo });
-  const graphProvider = demo ? "synthetic" : graphHealth?.provider ?? "checking";
+  // Authenticated per-component availability for the System Status card. Only
+  // fetched in live mode — a demo session has no token to present.
+  const { data: sysStatus, error: sysError, reload: reloadSystemStatus } = useApi(() => system.status(), [], {
+    enabled: !demo,
+  });
 
   // If the investigator has already run an analysis (session context), light
   // up the workflow up to the evidence stage so the "one investigation, many
@@ -140,6 +141,57 @@ export function DashboardPage() {
 
   const recentEvidence = evidenceItems?.slice(0, 5) ?? [];
   const recentCandidates = candidates?.slice(0, 4) ?? [];
+
+  interface SystemRow {
+    label: string;
+    detail: string;
+    tone: "ok" | "warn" | "error";
+    state: string;
+  }
+
+  // Every component row maps to a boolean from the authenticated
+  // /api/v1/system/status endpoint; demo sessions render honest "off" copy.
+  const systemRows = useMemo<SystemRow[]>(() => {
+    if (demo) {
+      return [
+        { label: "Authentication", detail: "Session token required for live access", tone: "warn", state: "Sign in to connect" },
+        { label: "Blockchain ingestion API", detail: "GET /api/v1/wallets/{address}/transfers", tone: "warn", state: "Not available" },
+        { label: "API Health probe", detail: "GET /api/v1/health", tone: "warn", state: "Not reachable — demo mode" },
+        { label: "Investigation persistence", detail: "PostgreSQL via backend", tone: "warn", state: "Not connected" },
+        { label: "Analysis engine (graph)", detail: "Neo4j graph database", tone: "warn", state: "Not available" },
+        { label: "Attribution engine (VASP)", detail: "Curated public VASP directory", tone: "warn", state: "Not available" },
+        { label: "Report service (PDF)", detail: "Server-side PDF (reportlab)", tone: "warn", state: "Not connected" },
+        { label: "Sahyog intelligence", detail: "Cross-border inquiry repository", tone: "warn", state: "Not available" },
+      ];
+    }
+    if (sysError) {
+      return [{ label: "System status", detail: "Unable to fetch component availability", tone: "error", state: "Unavailable" }];
+    }
+    if (!sysStatus) {
+      return [
+        { label: "Authentication", detail: "Session token verified", tone: "warn", state: "Checking…" },
+        { label: "Blockchain ingestion API", detail: "GET /api/v1/wallets/{address}/transfers", tone: "warn", state: "Probing…" },
+        { label: "API Health probe", detail: "GET /api/v1/health", tone: "warn", state: "Checking…" },
+        { label: "Investigation persistence", detail: "PostgreSQL via backend", tone: "warn", state: "Probing…" },
+        { label: "Analysis engine (graph)", detail: "Neo4j graph database", tone: "warn", state: "Probing…" },
+        { label: "Attribution engine (VASP)", detail: "Curated public VASP directory", tone: "warn", state: "Checking…" },
+        { label: "Report service (PDF)", detail: "Server-side PDF (reportlab)", tone: "warn", state: "Probing…" },
+        { label: "Sahyog intelligence", detail: "Cross-border inquiry repository", tone: "warn", state: "Checking…" },
+      ];
+    }
+    const connected = (ok: boolean) => (ok ? "Connected" : "Not connected");
+    const unavailable = (ok: boolean) => (ok ? "Connected" : "Not available");
+    return [
+      { label: "Authentication", detail: "Session token verified", tone: "ok", state: "Signed in" },
+      { label: "Blockchain ingestion API", detail: "GET /api/v1/wallets/{address}/transfers", tone: sysStatus.blockchain ? "ok" : "warn", state: sysStatus.blockchain ? "Alchemy configured" : "Not configured" },
+      { label: "API Health probe", detail: "GET /api/v1/health", tone: "ok", state: "Connected" },
+      { label: "Investigation persistence", detail: "PostgreSQL via backend", tone: sysStatus.postgres ? "ok" : "warn", state: connected(sysStatus.postgres) },
+      { label: "Analysis engine (graph)", detail: "Neo4j graph database", tone: sysStatus.graph ? "ok" : "warn", state: unavailable(sysStatus.graph) },
+      { label: "Attribution engine (VASP)", detail: "Curated public VASP directory", tone: sysStatus.vasp ? "ok" : "warn", state: unavailable(sysStatus.vasp) },
+      { label: "Report service (PDF)", detail: "Server-side PDF (reportlab)", tone: sysStatus.report ? "ok" : "warn", state: connected(sysStatus.report) },
+      { label: "Sahyog intelligence", detail: "Cross-border inquiry repository", tone: sysStatus.sahyog ? "ok" : "warn", state: unavailable(sysStatus.sahyog) },
+    ];
+  }, [demo, sysStatus, sysError]);
 
   return (
     <div className="page">
@@ -230,44 +282,19 @@ export function DashboardPage() {
 
       {/* System status + risk intelligence + fund flow preview */}
       <div className="grid grid-3">
-        <Card title="System Status" subtitle="Honest availability of each engine">
+        <Card
+          title="System Status"
+          subtitle="Honest availability of each engine"
+          actions={
+            <span className="row" style={{ gap: 6 }}>
+              <Button variant="ghost" size="sm" onClick={reloadSystemStatus}>↻ Refresh</Button>
+            </span>
+          }
+        >
           <div className="stack">
-            <StatusRow
-              label="Blockchain ingestion API"
-              detail="GET /api/v1/wallets/{address}/transfers"
-              tone={mode === "live" ? "ok" : "warn"}
-              state={mode === "live" ? "Live" : "Unavailable"}
-            />
-            <StatusRow
-              label="API Health probe"
-              detail="GET /api/v1/health"
-              tone={mode === "live" ? "ok" : "error"}
-              state={mode === "live" ? "Connected" : "Not reachable — demo mode"}
-            />
-            <StatusRow
-              label="Investigation persistence"
-              detail="Backend case store (none configured)"
-              tone={mode === "live" ? "ok" : "warn"}
-              state={mode === "live" ? "Connected — no rows yet" : "Not connected"}
-            />
-            <StatusRow
-              label="Analysis engine (graph)"
-              detail={graphProvider === "neo4j" ? "Neo4j reachable via backend" : "Postgres/NX synthetic pipeline"}
-              tone={graphProvider === "neo4j" ? "ok" : graphProvider === "checking" ? "warn" : "warn"}
-              state={graphProvider === "neo4j" ? "Connected" : graphProvider === "checking" ? "Probing…" : "Not available"}
-            />
-            <StatusRow
-              label="Attribution engine (VASP)"
-              detail="On-demand /api/v1/investigations/{address}/analyze"
-              tone={mode === "live" ? "ok" : "warn"}
-              state={mode === "live" ? "Connected (on demand)" : "Not available"}
-            />
-            <StatusRow
-              label="Report service (PDF)"
-              detail="Server-side export not implemented"
-              tone="warn"
-              state="Not connected"
-            />
+            {systemRows.map((row) => (
+              <StatusRow key={row.label} label={row.label} detail={row.detail} tone={row.tone} state={row.state} />
+            ))}
           </div>
         </Card>
 

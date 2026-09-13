@@ -106,3 +106,81 @@ class TestReportsAPI:
         )
         assert resp.status_code == 200
         assert resp.content.startswith(b"%PDF")
+
+    def test_export_context_uses_persisted_analysis_payloads(self, app_client):
+        """Regression: _resolve_context must read the RAW case record
+        (latest_transactions / latest_candidates), not the aggregated
+        InvestigationOut which strips those payloads — otherwise populated
+        cases render UNAVAILABLE sections."""
+        from cases.service import InvestigationService
+        from evidence.repository import EvidenceRepository
+        from risk.repository import MemoryRiskRepository
+        from wallets.repository import MemoryWalletRepository
+
+        case = app_client.post(
+            "/api/v1/investigations",
+            json={
+                "name": "context case",
+                "primary_wallet": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            },
+        ).json()
+        app_client._test_cases_repo.update(
+            case["id"],
+            {
+                "latest_data_source": "live",
+                "latest_transactions": [
+                    {
+                        "block_timestamp": "2026-09-01T00:00:00Z",
+                        "from_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "to_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "value": "1.5",
+                        "token_symbol": "ETH",
+                    }
+                ],
+                "latest_candidates": [
+                    {
+                        "score": 87,
+                        "confidence": "HIGH",
+                        "vasp_name": "SynthExchange_A",
+                    }
+                ],
+            },
+        )
+
+        service = InvestigationService(
+            repository=app_client._test_cases_repo,
+            evidence_service=EvidenceRepository(),
+            wallet_repository=MemoryWalletRepository(),
+            risk_repository=MemoryRiskRepository(),
+        )
+        from reports.api import _resolve_context
+        from reports.models import ReportMetadata
+
+        context = _resolve_context(
+            ReportMetadata(
+                case_id=case["id"],
+                case_name="context case",
+                primary_wallet="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                network="eth",
+            ),
+            service,
+        )
+        # The raw record (not InvestigationOut) must carry the payloads.
+        assert len(context["case"]["latest_transactions"]) == 1
+        assert len(context["case"]["latest_candidates"]) == 1
+
+        overview = report_models.build_section_content("wallet_overview", context)
+        assert "Transactions persisted: 1" in overview
+        assert "VASP candidates ranked: 1" in overview
+
+        tx_analysis = report_models.build_section_content("transaction_analysis", context)
+        assert "1.5" in tx_analysis
+        assert "No persisted transaction set" not in tx_analysis
+
+        candidates = report_models.build_section_content("vasp_candidates", context)
+        assert "SynthExchange_A" in candidates
+        assert "No VASP attribution candidates" not in candidates
+
+        appendix = report_models.build_section_content("appendix", context)
+        assert "live" in appendix
+        assert "Alchemy" in appendix

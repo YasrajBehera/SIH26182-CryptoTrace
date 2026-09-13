@@ -163,6 +163,7 @@ export function getDemoInvestigationAnalysis(address: string): InvestigationAnal
     disclaimer:
       "This score is an analytical ranking heuristic. It is NOT proof of wallet ownership or VASP association.",
     isDemo: true,
+    dataSource: "demo",
     syntheticTransactions: true,
     intelligence: null,
     candidates: demoCandidates.map((c, i) => ({

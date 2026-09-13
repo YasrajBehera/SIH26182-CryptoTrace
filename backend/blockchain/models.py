@@ -44,12 +44,29 @@ class BlockchainTransfer(BaseModel):
 
 
 class PaginationInfo(BaseModel):
-    """Pagination metadata for a transfers response."""
+    """Pagination metadata for a transfers response.
+
+    ``limit``/``offset`` echo the client's request. ``total`` is the number of
+    normalized, de-duplicated transfers the backend actually holds for this
+    wallet (within the fetch cap); ``has_next``/``has_previous`` let the UI
+    page over that set without loading it all into React. ``truncated`` stays
+    true when on-chain history exists beyond the provider fetch cap.
+    """
 
     max_transfers: int = Field(..., description="Maximum number of transfers returned")
     fetched: int = Field(..., description="Number of transfers actually fetched")
     truncated: bool = Field(False, description="True if the result was truncated by a limit")
     skipped: int = Field(0, description="Malformed provider records skipped")
+    offset: int = Field(0, description="Requested offset into the sorted set")
+    limit: Optional[int] = Field(None, description="Requested page size")
+    total: int = Field(0, description="Total normalized transfers held for this wallet")
+    has_next: bool = Field(False, description="True if more held rows exist after this page")
+    has_previous: bool = Field(False, description="True if this page is not the first")
+    source: str = Field(
+        "provider",
+        description="'provider' = fetched fresh from the blockchain provider; "
+        "'database' = served from the persisted PostgreSQL wallet store",
+    )
 
 
 class WalletTransfers(BaseModel):

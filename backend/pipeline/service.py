@@ -26,10 +26,11 @@ class InvestigationPipeline:
       - ``demo``  synthetic transfers were generated locally (offline fallback)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, sync_to_neo4j: bool = True) -> None:
         self._attr = get_attribution_service()
         self._intel = self._attr.intelligence_service
         self._wallets = WalletService()
+        self._sync_to_neo4j = sync_to_neo4j
 
     @property
     def attribution_service(self) -> AttributionService:
@@ -191,6 +192,32 @@ class InvestigationPipeline:
             return None, "demo"
         return result.transfers, "live"
 
+    def _sync_live_to_neo4j(self, wallet_rows: List[dict]) -> int:
+        """Best-effort mirror of freshly ingested LIVE rows into Neo4j.
+
+        Runs only for real chain data so the graph reflects the investigation
+        without requiring a manual ``POST /api/v1/graph/sync``. Failures and
+        an unreachable Neo4j are tolerated: GraphPage reports engine
+        availability independently, and a manual sync can always be triggered.
+        """
+        if not wallet_rows:
+            return 0
+        try:
+            from graph.neo4j_client import create_driver, is_neo4j_healthy
+            from graph import service as graph_service
+
+            driver = create_driver()
+        except Exception:
+            return 0
+        try:
+            if not is_neo4j_healthy(driver):
+                return 0
+            return graph_service.merge_transactions(driver, wallet_rows)
+        except Exception:
+            return 0
+        finally:
+            driver.close()
+
     def run(
         self,
         request: InvestigationRequest,
@@ -216,14 +243,14 @@ class InvestigationPipeline:
 
         graph_data = self._graph_to_graph_data(graph, address, chain)
 
-        intel = self._intel.lookup_address(address, chain)
+        intel = self._intel.lookup_address(address, chain, data_source=data_source)
 
         attr_request = AttributionRequest(
             address=address,
             chain=chain,
             graph_data=graph_data,
         )
-        attr_response = self._attr.analyze(attr_request)
+        attr_response = self._attr.analyze(attr_request, data_source=data_source)
 
         evidence_count = 0
         for c in attr_response.candidates:
@@ -237,6 +264,8 @@ class InvestigationPipeline:
                 chain=chain,
                 transfers=wallet_rows,
             )
+            if self._sync_to_neo4j:
+                self._sync_live_to_neo4j(wallet_rows)
 
         return InvestigationResult(
             address=address,

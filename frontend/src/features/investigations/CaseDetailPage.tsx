@@ -7,6 +7,8 @@ import { investigations } from "@/api/investigations";
 import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
 import { formatDate } from "@/lib/format";
+import { InvestigatorAssistant } from "@/features/assistant/InvestigatorAssistant";
+import type { InvestigationNote } from "@/api/types";
 import type { TabItem } from "@/components/ui";
 
 export function CaseDetailPage() {
@@ -16,7 +18,7 @@ export function CaseDetailPage() {
   const { user, can } = useAuth();
 
   const { data: investigation, loading, error, reload } = useApi(() => (id ? investigations.get(id) : Promise.resolve(null)), [id]);
-  const { data: notes } = useApi(() => investigations.notes(), []);
+  const { data: notes, reload: reloadNotes } = useApi<InvestigationNote[]>(() => (id ? investigations.notes(id) : Promise.resolve([])), [id]);
   const { data: timeline } = useApi(() => investigations.timeline(), []);
 
   const [tab, setTab] = useState("overview");
@@ -33,19 +35,24 @@ export function CaseDetailPage() {
     );
   }
 
-  const addNote = () => {
-    if (!noteText.trim() || !user) return;
+  const addNote = async () => {
+    if (!noteText.trim() || !user || !id) return;
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    try {
+      const author = user.name ?? user.username ?? "Analyst";
+      await investigations.addNote(id, noteText.trim(), author);
       setNoteText("");
-    }, 400);
+      reloadNotes();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const tabs: TabItem[] = [
     { key: "overview", label: "Overview" },
     { key: "notes", label: `Notes (${notes?.length ?? 0})` },
     { key: "timeline", label: `Timeline (${timeline?.length ?? 0})` },
+    { key: "assistant", label: "Assistant" },
   ];
 
   return (
@@ -130,7 +137,7 @@ export function CaseDetailPage() {
                   <div className="timeline-title">{n.author}</div>
                   <div className="timeline-meta">
                     <span>{formatDate(n.createdAt)}</span>
-                    <Badge className="badge-demo">Demo</Badge>
+                    {isDemo || investigation.isDemo ? <Badge className="badge-demo">Demo</Badge> : null}
                   </div>
                   <p style={{ margin: "6px 0 0" }}>{n.body}</p>
                 </div>
@@ -141,11 +148,17 @@ export function CaseDetailPage() {
                 className="stack"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  addNote();
+                  void addNote();
                 }}
               >
                 <Field label="Add analyst note" htmlFor={`note-${id}`}>
-                  <Textarea id={`note-${id}`} rows={2} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Optional note — notes are persisted server-side in a later release." />
+                  <Textarea
+                    id={`note-${id}`}
+                    rows={2}
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    placeholder="Analyst note — persisted with this case and visible to its investigators."
+                  />
                 </Field>
                 <div className="row">
                   <Button variant="primary" type="submit" disabled={saving || !noteText.trim()}>
@@ -166,6 +179,13 @@ export function CaseDetailPage() {
             }))}
           />
         )}
+        {tab === "assistant" ? (
+          can("investigation.read") ? (
+            <InvestigatorAssistant caseId={investigation.id} walletAddress={investigation.primaryWallet} scope="case" />
+          ) : (
+            <Badge className="status-draft">Your role needs the investigation.read permission to use the assistant.</Badge>
+          )
+        ) : null}
       </Card>
     </div>
   );

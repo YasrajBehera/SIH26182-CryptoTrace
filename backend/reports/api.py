@@ -30,11 +30,14 @@ def _resolve_context(metadata: report_models.ReportMetadata, service) -> dict:
 
     if metadata.case_id:
         try:
-            case = service.get(metadata.case_id, service_user())
+            # Pull the RAW persisted record (not the aggregated InvestigationOut)
+            # so latest_transactions / latest_candidates flow into the report
+            # sections. The aggregated model intentionally strips those payloads.
+            case = service.record_for(metadata.case_id, service_user())
         except Exception:
             case = None
         if case:
-            context["case"] = case.model_dump()
+            context["case"] = case
             assessment = service.risk_for(metadata.case_id, service_user())
             if assessment:
                 context["risk_disclaimer"] = assessment.disclaimer
@@ -45,15 +48,19 @@ def service_user():
     """Reports pull persisted data the way any reader would; the owning
     investigation service enforces ownership scoping when a case id is set."""
     from app.auth.demo import DEMO_USERS
-    from app.auth.models import User
+    from app import models as db_models
 
     admin_spec = next(u for u in DEMO_USERS if u["username"] == "admin")
-    return User(
+    # Transient (unpersisted) record sufficient for ownership scoping checks.
+    user = db_models.User(
         id=int(admin_spec.get("id") or 1),
         username=admin_spec["username"],
+        display_name=admin_spec.get("display_name", ""),
+        email="",
         role=admin_spec["role"],
         title=admin_spec.get("title", ""),
     )
+    return user
 
 
 @router.post(
@@ -99,6 +106,15 @@ def export_report(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     report_id = report_models.new_report_id()
+    if metadata.case_id:
+        try:
+            investigation_service.attach_report(
+                metadata.case_id, report_id, _current_user
+            )
+        except Exception:
+            # Attaching the id to the case is best-effort; the report itself
+            # is still valid and the export is still audited below.
+            pass
     audit_service.record_event(
         user=_current_user.username,
         action="REPORT_EXPORT",

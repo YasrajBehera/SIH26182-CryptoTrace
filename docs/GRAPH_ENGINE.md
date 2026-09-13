@@ -187,6 +187,22 @@ Path-analysis `source`, `target`, and `wallet_id` must match
 | `GET /api/v1/graph/wallets/{wallet_id}/temporal-flow` | Neo4j | per-wallet in/out flows |
 | `GET /api/v1/graph/clusters` | Neo4j (GDS) | wcc/louvain/leiden communities |
 
+Live-run notes (wallets are connected through `Transaction` nodes, not
+direct wallet edges, and the container ships GDS but no APOC):
+
+- `neighbors` and depth-limited `dfs` traverse `(wallet)-[:SENT|RECEIVED]
+  ->(:Transaction)->(wallet)` via a shared `NEIGHBORS_QUERY`; DFS is an
+  iterative stack in Python so the container does **not** need APOC.
+- GDS projections require numeric relationship properties, so transactions
+  store a float `amount_value` (plus `timestamp`) alongside the human-readable,
+  text `amount`; `shortest-path?weight=amount` weights by `amount_value`.
+- The GDS WCC variant in Neo4j 5.26 reports the community as `componentId`;
+  louvain/leiden report `communityId`. The service maps each algorithm's
+  column so clients always see a consistent `community` key.
+- Verified live: BFS (25 nodes / 20 edges), `neighbors` 85 counterparts,
+  `dfs` 86 nodes, `temporal-flow` 25 flows, `shortest-path` found with
+  `node_count=3`, `clusters` wcc 2 communities / louvain 4 communities.
+
 See `docs/API_CONTRACTS.md` for the full contract style.
 
 ## 14. Example input

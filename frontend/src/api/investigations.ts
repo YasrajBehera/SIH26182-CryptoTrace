@@ -16,6 +16,8 @@ import type {
   BackendInvestigation,
   BackendInvestigationCreate,
   BackendInvestigationList,
+  BackendInvestigationNote,
+  BackendInvestigationNoteList,
   BackendInvestigationResult,
   Investigation,
   InvestigationAnalysis,
@@ -195,8 +197,44 @@ export const investigations = {
     return mapBackendInvestigationToView(created);
   },
 
-  async notes(): Promise<InvestigationNote[]> {
-    return demoNotes;
+  async notes(caseId: string): Promise<InvestigationNote[]> {
+    if (isDemoMode()) return demoNotes;
+    const res = await client.get<BackendInvestigationNoteList>(
+      `/api/v1/investigations/${encodeURIComponent(caseId)}/notes`,
+    );
+    return (res.notes ?? []).map((n) => ({
+      id: n.id,
+      author: n.author,
+      createdAt: n.created_at,
+      body: n.body,
+    }));
+  },
+
+  /**
+   * Persist an analyst note on a case. In demo mode the note is appended to
+   * the labeled synthetic set so the page behaves end-to-end without a backend.
+   */
+  async addNote(caseId: string, body: string, author: string): Promise<InvestigationNote> {
+    if (isDemoMode()) {
+      const note: InvestigationNote = {
+        id: `n-${Date.now()}`,
+        author,
+        createdAt: new Date().toISOString(),
+        body,
+      };
+      demoNotes.push(note);
+      return note;
+    }
+    const created = await client.post<BackendInvestigationNote>(
+      `/api/v1/investigations/${encodeURIComponent(caseId)}/notes`,
+      { body, author },
+    );
+    return {
+      id: created.id,
+      author: created.author,
+      createdAt: created.created_at,
+      body: created.body,
+    };
   },
 
   async timeline(): Promise<InvestigationTimelineEvent[]> {

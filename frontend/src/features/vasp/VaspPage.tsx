@@ -1,5 +1,5 @@
 import { useSearchParams } from "react-router-dom";
-import { PageHeader, Button, Card, DemoBadge, EmptyState, LoadingBlock, ConfidenceLevelBadge } from "@/components/ui";
+import { PageHeader, Button, Card, DemoBadge, Badge, EmptyState, LoadingBlock, ConfidenceLevelBadge } from "@/components/ui";
 import { CandidateCard } from "@/components/attribution/CandidateCard";
 import { useApi } from "@/hooks/useApi";
 import { attribution } from "@/api/attribution";
@@ -20,6 +20,7 @@ export function VaspPage() {
 
   const { data: candidates, loading, error, reload } = useApi(() => attribution.candidates(wallet || undefined), [wallet]);
   const { data: provenance } = useApi(() => evidence.provenance(), [], { enabled: true });
+  const { data: directMatch } = useApi(() => (wallet ? attribution.intelligence(wallet) : Promise.resolve(null)), [wallet]);
 
   if (!can("attribution.read")) {
     return (
@@ -48,11 +49,19 @@ export function VaspPage() {
         title="VASP Intelligence"
         subtitle="Candidate service-provider associations derived from wallet behavior. Results are candidates, not verified ownership."
         crumbs={[{ label: "VASP Intelligence" }]}
-        actions={isDemo ? <DemoBadge label="SYNTHETIC ATTRIBUTION" /> : undefined}
+        actions={isDemo ? <DemoBadge label="DEMO — SYNTHETIC EVIDENCE" /> : <Badge className="status-open">LIVE — REAL BLOCKCHAIN EVIDENCE</Badge>}
       />
 
-      <div className="risk-rule rr-high" role="note">
-        <strong>Attribution caveat:</strong> confidence reflects available transactional and intelligence evidence. It is not proof of ownership.
+      <div
+        className="risk-rule rr-high"
+        role="note"
+        style={isDemo ? undefined : { background: "rgba(0,255,160,0.06)", borderLeftColor: "var(--success)" }}
+      >
+        <strong>{isDemo ? "DEMO mode" : "LIVE mode"}:</strong>{" "}
+        {isDemo
+          ? "Candidates are scored against the demo synthetic VASP directory. All evidence is labeled synthetic."
+          : "Attribution is scored against the curated public VASP address directory. Evidence is derived from real blockchain data."}{" "}
+        The score is an analytical ranking heuristic. It is NOT proof of wallet ownership or VASP association.
       </div>
 
       {wallet ? (
@@ -64,6 +73,31 @@ export function VaspPage() {
       {entity ? (
         <Card title="Filtered by entity" subtitle={`Showing candidates matching "…${entity}…".`}>
           <span className="mono" data-testid="vasp-entity-filter">{entity}</span>
+        </Card>
+      ) : null}
+
+      {wallet ? (
+        <Card title="Direct known-address match" subtitle="Directory lookup of the queried wallet — a different question from behavioral candidates below.">
+          {directMatch?.isKnownVasp ? (
+            <div className="stack">
+              <p className="status-open" style={{ margin: 0 }}>
+                This wallet is listed directly in the curated VASP directory as{" "}
+                <strong>{directMatch.knownVasp}</strong> ({directMatch.addressType ?? "address type unknown"}
+                {directMatch.jurisdiction ? `, ${directMatch.jurisdiction}` : ""}) — {directMatch.matchCount} directory{" "}
+                {directMatch.matchCount === 1 ? "match" : "matches"}.
+              </p>
+              <div className="detail-row">
+                <span className="detail-label">Verification</span>
+                <span className="detail-value">{directMatch.verificationStatus ?? "unverified"}</span>
+              </div>
+            </div>
+          ) : (
+            <p style={{ margin: 0 }}>
+              None found — this wallet is not listed directly in the curated VASP directory. Any associations shown in{" "}
+              <strong>Candidate ranking</strong> below are behavioral candidates derived from transaction history and graph
+              proximity, not direct directory listings.
+            </p>
+          )}
         </Card>
       ) : null}
 
@@ -86,7 +120,10 @@ export function VaspPage() {
       ) : (
         <div className="stack">
           {/* Ranking summary strip */}
-          <Card title="Candidate ranking" subtitle="Sorted by confidence strength — strongest associations first.">
+          <Card
+            title="Candidate ranking"
+            subtitle="Behavioral/graph candidate associations — sorted by confidence strength. These are NOT direct directory matches."
+          >
             <div className="rank-strip">
               {ranked.map((c, i) => (
                 <div key={c.id} className={`rank-card ${i === 0 ? "rank-primary" : ""}`}>
@@ -109,7 +146,14 @@ export function VaspPage() {
         </div>
       )}
 
-      <Card title="Provenance chain" subtitle="How a candidate association is derived (synthetic today).">
+      <Card
+        title="Provenance chain"
+        subtitle={
+          isDemo
+            ? "How a candidate association is derived in demo mode (synthetic dataset, clearly labeled)."
+            : "How a candidate association is derived — scored against the curated public VASP directory."
+        }
+      >
         <ProvenanceChain links={provenance ?? []} />
       </Card>
     </div>

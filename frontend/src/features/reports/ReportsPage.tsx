@@ -52,7 +52,7 @@ export function ReportsPage() {
   const config = useMemo<ReportConfig>(
     () => ({
       metadata: {
-        caseId: caseData?.id ?? `CT-${target.slice(0, 6).toUpperCase()}-NWP`,
+        caseId: caseData?.id ?? null,
         caseName: caseData?.name ?? "Wallet analysis",
         investigator: username ?? "Unassigned",
         generatedAt: new Date().toISOString(),
@@ -62,8 +62,10 @@ export function ReportsPage() {
       },
       sections,
     }),
-    [caseData, username, network, walletAddress, sections, target],
+    [caseData, username, network, walletAddress, sections],
   );
+
+  const noLinkedCase = !caseData;
 
   if (!can("report.create")) {
     return (
@@ -83,6 +85,10 @@ export function ReportsPage() {
     }
     if (isDemo) {
       window.print();
+      return;
+    }
+    if (noLinkedCase) {
+      push({ kind: "error", title: "No investigation context", description: "Create or select an investigation before generating a report." });
       return;
     }
     try {
@@ -110,9 +116,9 @@ export function ReportsPage() {
         actions={
           <>
             {isDemo ? <DemoBadge label="DEMO REPORT PREVIEW" /> : <Badge className="status-open">Live data</Badge>}
-            {isDemo ? <Badge className="status-draft">Server-side export: NOT CONFIGURED</Badge> : <Badge className="status-open">Server-side PDF ready</Badge>}
-            <Button variant="primary" leading={<ExportIcon />} onClick={exportPdf} disabled={!walletAddress}>
-              {isDemo ? "Export PDF (print)" : "Export server PDF"}
+            {isDemo ? <Badge className="status-draft">Demo — browser print view</Badge> : <Badge className="status-open">Server-side PDF ready</Badge>}
+            <Button variant="primary" leading={<ExportIcon />} onClick={exportPdf} disabled={!walletAddress || (!isDemo && noLinkedCase)}>
+              {isDemo ? "Export PDF (print)" : noLinkedCase ? "Select a case first" : "Export server PDF"}
             </Button>
           </>
         }
@@ -141,8 +147,8 @@ export function ReportsPage() {
             />
           </Field>
           <div className="table-toolbar">
-            <Badge className="status-draft">
-              Case: {caseData?.id ?? "no case linked"} · Network: {network}
+            <Badge className={noLinkedCase ? "status-warn" : "status-open"}>
+              Case: {caseData?.id ?? "no case linked"}{noLinkedCase ? " — create or select an investigation before generating a report." : ""} · Network: {network}
             </Badge>
             <Badge className="status-draft">{transfers?.length ?? 0} transfers</Badge>
             <Badge className="status-draft">{candidates?.length ?? 0} VASP candidates</Badge>

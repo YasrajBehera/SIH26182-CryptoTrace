@@ -6,6 +6,20 @@ from pipeline.models import InvestigationRequest, InvestigationResult
 from pipeline.service import InvestigationPipeline
 
 
+def _transfer(**overrides):
+    tx = {
+        "chain": "eth",
+        "transaction_hash": "0x666", 
+        "block_number": 10,
+        "block_timestamp": 1704067200,
+        "from_address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "to_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "value": "1000000000000000000",
+    }
+    tx.update(overrides)
+    return type("FakeTransfer", (), tx)()
+
+
 class TestFullPipelineE2E:
     """End-to-end: wallet address -> synthetic ingestion -> graph -> attribution -> evidence."""
 
@@ -291,3 +305,35 @@ class TestPipelineAPIEndpoint:
         resp = app_client.get("/")
         assert resp.status_code == 200
         assert resp.json()["project"] == "SIH26182-CryptoTrace"
+
+
+class TestPipelineNeo4jSync:
+    """LIVE analyses mirror ingested rows into Neo4j; demo/synthetic never do."""
+
+    def test_live_pipeline_syncs_to_neo4j(self, monkeypatch):
+        synth_txs = generate_transactions(seed=42, count=30)
+        pipeline = InvestigationPipeline(sync_to_neo4j=True)
+        pipeline._try_live = lambda request: (
+            [synth_txs[0], synth_txs[1]],
+            "live",
+        )
+        calls = []
+        pipeline._sync_live_to_neo4j = lambda rows: calls.append(len(rows)) or 2
+
+        result = pipeline.run(
+            InvestigationRequest(address=synth_txs[0].from_address, chain="eth")
+        )
+
+        assert result.data_source == "live"
+        assert calls == [2]
+
+    def test_demo_pipeline_never_syncs(self, monkeypatch):
+        pipeline = InvestigationPipeline(sync_to_neo4j=True)
+        pipeline._sync_live_to_neo4j = lambda rows: (_ for _ in ()).throw(
+            AssertionError("demo path must not touch Neo4j")
+        )
+        result = pipeline.run(
+            InvestigationRequest(address="0xaaaa000000000000000000000000000000000001", chain="eth"),
+            synth_txs=generate_transactions(seed=42, count=30),
+        )
+        assert result.data_source == "demo"

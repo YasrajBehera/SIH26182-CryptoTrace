@@ -65,10 +65,17 @@ export interface RequestOptions {
   query?: Record<string, string | number | boolean | null | undefined>;
   timeoutMs?: number;
   headers?: Record<string, string>;
+  /** When true, resolve with the raw response body as a Blob plus its headers. */
+  asBlob?: boolean;
+}
+
+export interface BlobResult {
+  blob: Blob;
+  headers: Headers;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, query, timeoutMs = 30000, headers } = options;
+  const { method = "GET", body, query, timeoutMs = 30000, headers, asBlob } = options;
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -99,6 +106,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     });
 
     let data: unknown = null;
+    if (res.ok && asBlob) {
+      return { blob: await res.blob(), headers: res.headers } as T;
+    }
     const text = await res.text();
     if (text) {
       try {
@@ -148,4 +158,7 @@ export const client = {
   patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, { ...options, method: "PATCH", body }),
   del: <T>(path: string, options?: RequestOptions) => request<T>(path, { ...options, method: "DELETE" }),
+  /** POST returning a Blob body (binary payloads like PDFs) plus response headers. */
+  postBlob: <T = BlobResult>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: "POST", body, asBlob: true }),
 };

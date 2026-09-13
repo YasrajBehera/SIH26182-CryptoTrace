@@ -1,4 +1,6 @@
+import os
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,8 +10,9 @@ from pydantic import BaseModel, Field
 from app.audit.api import router as audit_router
 from app.auth.api import admin_router as admin_users_router
 from app.auth.api import router as auth_router
-from app.auth.deps import require_permission
+from app.auth.deps import get_current_user, require_permission
 from app.config import settings as _settings
+from assistant.api import router as assistant_router
 from graph.api import close_driver, router as graph_router
 from graph.db_loader import GraphLoadError
 
@@ -24,6 +27,7 @@ from pipeline.api import router as pipeline_router
 from reports.api import router as reports_router
 from risk.api import router as risk_router
 from sahyog.api import router as sahyog_router
+from search.api import router as search_router
 from wallets.api import router as wallets_router
 
 
@@ -140,6 +144,8 @@ app.include_router(wallets_router)
 app.include_router(risk_router)
 app.include_router(reports_router)
 app.include_router(sahyog_router)
+app.include_router(search_router)
+app.include_router(assistant_router)
 app.include_router(auth_router)
 app.include_router(admin_users_router)
 app.include_router(audit_router)
@@ -151,6 +157,12 @@ async def graph_load_error_handler(request: Request, exc: GraphLoadError):
 
 
 service = BlockchainService()
+# Wire the persistent wallet repository into the transfers service so that
+# GET /wallets/{address}/transfers serves from PostgreSQL when rows already
+# exist for the wallet, and stores fresh provider results for later pages.
+from wallets.repository import make_wallet_repository as _make_wallet_repo
+
+service.wallet_repository = _make_wallet_repo()
 
 
 class WalletRequest(BaseModel):
@@ -171,6 +183,60 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/v1/system/status")
+def system_status(_current_user=Depends(get_current_user)) -> dict:
+    """Authenticated per-component availability for the dashboard status card.
+
+    Each entry is a plain boolean resolved from a cheap live check at request
+    time — no chain RPC calls and no long-running probes:
+
+    - backend:    this process is serving the request
+    - auth:       a valid session token was presented
+    - postgres:   the configured database is reachable
+    - blockchain: an Alchemy provider key is configured
+    - neo4j:      the graph database is reachable
+    - graph:      mirrors neo4j (the graph engine runs on Neo4j)
+    - vasp:       attribution engine ships with the service
+    - report:     the PDF renderer (reportlab) is importable
+    - sahyog:     the cross-border inquiry repository is available
+    """
+    from app.db import database_available
+    from graph.neo4j_client import create_driver, is_neo4j_healthy
+
+    graph_ok = False
+    driver = None
+    try:
+        driver = create_driver()
+        graph_ok = is_neo4j_healthy(driver)
+    except Exception:
+        graph_ok = False
+    finally:
+        if driver is not None:
+            try:
+                driver.close()
+            except Exception:
+                pass
+
+    report_ok = False
+    try:
+        import reportlab  # noqa: F401
+        report_ok = True
+    except Exception:
+        report_ok = False
+
+    return {
+        "backend": True,
+        "auth": True,
+        "postgres": database_available(),
+        "blockchain": bool(_settings.alchemy_api_key or os.environ.get("ALCHEMY_API_KEY", "")),
+        "neo4j": graph_ok,
+        "graph": graph_ok,
+        "vasp": True,
+        "report": report_ok,
+        "sahyog": True,
+    }
+
+
 @app.get(
     "/api/v1/wallets/{address}/transfers",
     response_model=WalletTransfers,
@@ -186,13 +252,31 @@ def health():
 async def get_wallet_transfers(
     address: str = Path(..., description="Ethereum wallet address (0x...)"),
     limit: int | None = Query(
-        None, ge=1, le=10000, description="Optional cap on number of transfers returned"
+        None, ge=1, le=10000, description="Page size (number of transfers returned)"
+    ),
+    offset: int | None = Query(
+        None, ge=0, description="Offset into the sorted transfer set"
+    ),
+    direction: Literal["in", "out"] | None = Query(
+        None, description="Restrict to one direction (in/out)"
+    ),
+    refresh: bool = Query(
+        False, description="Force a fresh provider fetch instead of replaying persisted rows"
     ),
     _current_user=Depends(require_permission("wallet.read")),
 ):
-    """Return normalized incoming/outgoing transfers for a wallet."""
+    """Return normalized incoming/outgoing transfers for a wallet.
+
+    Served from the persisted PostgreSQL wallet store when rows already exist
+    for the wallet (consistent across pages and surfaces); otherwise fetched
+    from the blockchain provider, normalized, timestamped from the chain block
+    and persisted. ``total`` / ``has_next`` / ``has_previous`` are returned in
+    ``pagination`` so the UI can page without loading everything into React.
+    """
     try:
-        result = await service.get_wallet_transfers(address, limit=limit)
+        result = await service.get_wallet_transfers(
+            address, limit=limit, offset=offset, direction=direction, refresh=refresh
+        )
     except InvalidAddressError:
         raise HTTPException(status_code=400, detail="Invalid Ethereum address.")
     except (AlchemyConfigError, AlchemyHTTPError, AlchemyAPIError):

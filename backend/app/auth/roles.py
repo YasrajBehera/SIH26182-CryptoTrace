@@ -34,6 +34,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             "audit.read",
             "user.manage",
             "settings.manage",
+            "search.read",
         }
     ),
     "senior_investigator": frozenset(
@@ -51,6 +52,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             "risk.read",
             "report.create",
             "report.export",
+            "search.read",
         }
     ),
     "investigator": frozenset(
@@ -67,6 +69,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             "risk.read",
             "report.create",
             "report.export",
+            "search.read",
         }
     ),
     "analyst": frozenset(
@@ -81,6 +84,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             "evidence.create",
             "risk.read",
             "report.create",
+            "search.read",
         }
     ),
     "reviewer": frozenset(
@@ -93,6 +97,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             "risk.read",
             "report.create",
             "report.export",
+            "search.read",
         }
     ),
     "read_only": frozenset(
@@ -103,6 +108,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
             "attribution.read",
             "evidence.read",
             "risk.read",
+            "search.read",
         }
     ),
 }

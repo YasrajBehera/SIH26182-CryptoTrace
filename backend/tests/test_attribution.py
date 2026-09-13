@@ -409,3 +409,40 @@ class TestConfidenceThresholds:
         assert svc._determine_confidence(40.0) == Confidence.MEDIUM
         assert svc._determine_confidence(20.0) == Confidence.LOW
         assert svc._determine_confidence(0.0) == Confidence.LOW
+
+
+class TestLiveAttribution:
+    def test_live_analysis_against_curated_public_directory(self, attr_service):
+        request = AttributionRequest(
+            address="0x71660c4005BA85c37ccec55d0C4493E66Fe775d3",
+            chain="eth",
+        )
+        response = attr_service.analyze(request, data_source="live")
+        names = [c.vasp_name for c in response.candidates]
+        assert "Coinbase" in names
+
+    def test_live_evidence_is_flagged_as_chain_not_synthetic(self, attr_service):
+        request = AttributionRequest(
+            address="0x71660c4005BA85c37ccec55d0C4493E66Fe775d3",
+            chain="eth",
+        )
+        response = attr_service.analyze(request, data_source="live")
+        assert any(c.vasp_name == "Coinbase" and c.evidence_ids for c in response.candidates)
+        for candidate in response.candidates:
+            for ev_id in candidate.evidence_ids:
+                ev = attr_service.evidence_service.get_evidence(ev_id)
+                assert ev is not None
+                assert ev.source == "chain"
+
+    def test_demo_evidence_remains_synthetic(self, attr_service):
+        request = AttributionRequest(
+            address="0xaabb000000000000000000000000000000000001",
+            chain="eth",
+        )
+        response = attr_service.analyze(request, data_source="demo")
+        assert response.candidates
+        for candidate in response.candidates:
+            for ev_id in candidate.evidence_ids:
+                ev = attr_service.evidence_service.get_evidence(ev_id)
+                assert ev is not None
+                assert ev.source == "synthetic"

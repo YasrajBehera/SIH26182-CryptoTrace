@@ -7,7 +7,18 @@ Explainable cross-chain VASP attribution and blockchain investigation platform f
 Production-style end-to-end investigation demo: wallet -> normalized transfers -> live graph
 (BFS/temporal/fund-flow) -> attribution candidates with explainable confidence -> evidence with
 provenance and audit trail -> investigation-ready JSON and PDF reports, plus admin/RBAC, audit
-logging, rate limiting and a full test suite (backend 334+ passing, frontend 50 passing).
+logging, rate limiting and a full test suite (backend 498 passing, frontend 94 passing).
+
+The final milestone adds:
+
+- **Investigator Assistant (rule-based)** — a deterministic, evidence-grounded assistant that turns
+  investigation data into human-reviewable summaries, risk rationales, attribution explanations,
+  wallet/VASP lookups, a transaction-timeline builder and a draft-only SAHYOG referral. It is gated
+  by `investigation.read`, audits every query, and is fully test-covered backend and frontend.
+- **Persisted case notes** — analyst observations stored per case (`investigation_notes` table),
+  ownership-scoped read/write, surfaced as the case "Notes" tab.
+- **Graph edge `block_number`** — BFS/neighbor edges now expose the on-chain block number of each
+  recorded transfer alongside the timestamp.
 
 ## REAL vs DEMO
 
@@ -27,11 +38,13 @@ The frontend runs in two modes, auto-negotiated on boot by probing `GET /api/v1/
 | Attribution analysis | `POST /api/v1/investigations/{address}/analyze` | `getDemoCandidates()` | LIVE/REAL (pipeline) |
 | VASP names | `GET /api/v1/intelligence/vasp/names` | `getDemoVaspNames()` | LIVE/REAL |
 | Evidence / provenance | `GET /api/v1/evidence/address/{a}`, `GET /api/v1/evidence/attribution/{analysis_id}` | `getDemoProvenance()` | LIVE/REAL (in-memory) |
-| Cases / investigations | no CRUD endpoint (live `[]`) | `getDemoInvestigations()` | NOT CONFIGURED |
-| Case creation | throws in live | runtime demo store (survives session) | DEMO only |
+| Cases / investigations | `GET/POST/PATCH/DELETE /api/v1/investigations` | `getDemoInvestigations()` | LIVE/REAL (in-memory/DB) |
+| Case creation | `POST /api/v1/investigations` | runtime demo store | LIVE/REAL |
+| Case notes | `GET/POST /api/v1/investigations/{id}/notes` | `demoNotes` | LIVE/REAL |
+| Investigator Assistant | `GET /api/v1/assistant/quick-actions`, `POST /api/v1/assistant/query` | `getDemoAssistantResponse()` | LIVE/REAL (rule-based) |
 | User directory (admin) | `GET/POST/PATCH/DELETE /api/v1/admin/users` | seeded records | LIVE/REAL (DB or in-memory) |
 | Audit log | `GET /api/v1/audit` | demo events | LIVE/REAL |
-| Reports | server-side export **not implemented** | browser print / preview | NOT CONFIGURED |
+| Reports | server-side PDF export (`POST /api/v1/reports/export`, verified 4 KB `%PDF-` stream with `X-CryptoTrace-Report-Id`/`-Sections` headers) | browser print / preview | LIVE/REAL |
 | SAHYOG referral intake | no backend adapter | synthetic referrals only | DEMO/INTEGRATION-READY |
 | ETH/USD fiat estimate | CoinGecko `simple/price` (1h cache) | constant `DEMO_ETH_USD = 3500` | LIVE/REAL |
 
@@ -52,6 +65,8 @@ downstream pages reuse the same address/analysis without re-entry:
 - The evidence workspace reads `?analysis_id=<id>` (or the last stored analysis)
   and calls `GET /api/v1/evidence/attribution/{analysis_id}`.
 - Live wallet-analysis links carry the address into graph, transactions, and evidence.
+- The **Investigator Assistant** is available from the case detail ("Assistant" tab) and the
+  wallet detail page, and answers with evidence-grounded, reviewer-signed content.
 
 ## Honest status vocabulary
 
@@ -60,14 +75,15 @@ The UI never claims a feature is live when it is not. Labels used:
 - **LIVE / REAL** — served by a reachable backend endpoint.
 - **DEMO / SYNTHETIC** — labeled synthetic data (fallback or on-demand pipeline over synthetic transactions).
 - **NOT CONFIGURED** — feature genuinely needs a backend that is not implemented
-  (case persistence CRUD, server-side PDF export).
+  (server-side PDF export).
 - **UNAVAILABLE / ERROR** — endpoint reachable concept exists but the provider/engine is down (e.g. Neo4j disconnected: graph shows a "Synthetic fallback — Neo4j unavailable" badge).
 
 ## Docs
 
 - `docs/ARCHITECTURE.md` — high-level architecture
-- `docs/API_CONTRACTS.md` — API contracts
+- `docs/API_CONTRACTS.md` — API contracts (cases, notes, assistant, graph engine)
 - `docs/GRAPH_ENGINE.md` — Graph & Transaction Analysis module
+- `docs/SCORING_METHOD.md` — attribution scoring methodology
 - `docs/TEAM.md` — team responsibilities
 
 ## Team branches
@@ -208,9 +224,9 @@ run both to get live data.
 ### Frontend checks
 
 ```powershell
-npm test          # vitest suite (50 tests)
+npm test          # vitest suite (94 tests)
 npm run lint      # eslint src --max-warnings 0
-npm run build     # tsc --noEmit && vite build
+npm run build     # tsc -b && vite build
 ```
 
 ## Git workflow

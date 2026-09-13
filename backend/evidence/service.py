@@ -89,3 +89,7 @@ class EvidenceService:
 
     def delete_evidence(self, evidence_id: str) -> bool:
         return self._repo.delete(evidence_id)
+
+    def search(self, q: str, limit: int = 25) -> List[EvidenceRecord]:
+        """Search stored evidence records (global search support)."""
+        return self._repo.search_records(q, limit=limit)

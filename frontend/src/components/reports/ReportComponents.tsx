@@ -88,6 +88,9 @@ export function ReportPreview({
         <p style={{ color: "var(--text-faint)", fontSize: "var(--text-sm)" }}>
           Case {metadata.caseId} · Generated {formatDate(metadata.generatedAt)} · Investigator {metadata.investigator}
         </p>
+        <p style={{ color: "var(--text-faint)", fontSize: "var(--text-sm)" }}>
+          Data source: {mode === "demo" ? "DEMO — synthetic evidence" : `LIVE — ${metadata.network} (blockchain evidence)`}
+        </p>
       </section>
 
       {mode === "demo" ? (
@@ -114,7 +117,7 @@ export function ReportPreview({
           <h2>Investigation Details</h2>
           <ReportTable
             rows={[
-              ["Case ID", metadata.caseId],
+              ["Case ID", metadata.caseId ?? "—"],
               ["Case name", data.investigation?.name ?? "—"],
               ["Investigator", metadata.investigator],
               ["Generated", formatDate(metadata.generatedAt)],
@@ -177,9 +180,9 @@ export function ReportPreview({
         <section className="report-section">
           <h2>Fund Flow</h2>
           <p>
-            A sample path through the transaction graph is provided when graph analysis is available. Fund-flow
-            reconstruction is <strong>not yet computed</strong> — this section is a placeholder until the graph
-            engine ships.
+            Fund-flow reconstruction is served by the graph engine when a temporal path is available for the subject
+            wallet. When no graph path exists for this case, this section reports UNAVAILABLE rather than inventing a
+            flow.
           </p>
         </section>
       ) : null}
@@ -188,8 +191,9 @@ export function ReportPreview({
         <section className="report-section">
           <h2>Graph Analysis</h2>
           <p>
-            Network visualization and path analysis await the Member 2 graph backend. The interactive graph page
-            currently displays synthetic data for interface testing.
+            Graph analytics (neighbors, paths, temporal fund flow) are computed by the Neo4j-backed graph engine for
+            investigated wallets. Graph data source status is reported by the live system status endpoint; no synthetic
+            topology is presented in live mode.
           </p>
         </section>
       ) : null}

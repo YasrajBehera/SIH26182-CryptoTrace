@@ -126,6 +126,26 @@ class EvidenceRepository:
         with self._lock:
             return len(self._records)
 
+    def search_records(self, q: str, limit: int = 25) -> List[EvidenceRecord]:
+        """Return up to ``limit`` evidence records whose identity or content
+        contains q (global search; matches evidence id, attribution id,
+        address, tx hash, and description)."""
+        needle = q.lower()
+        with self._lock:
+            matches = [
+                r
+                for r in self._records.values()
+                if (
+                    needle in r.evidence_id.lower()
+                    or needle in r.attribution_id.lower()
+                    or needle in r.address.lower()
+                    or (r.tx_hash and needle in r.tx_hash.lower())
+                    or needle in r.description.lower()
+                )
+            ]
+        matches.sort(key=lambda r: r.provenance.created_at, reverse=True)
+        return matches[:limit]
+
 
 class DbEvidenceRepository:
     """SQLAlchemy/Postgres-backed evidence store."""
@@ -217,6 +237,25 @@ class DbEvidenceRepository:
 
         with SessionLocal() as session:
             return session.query(models.Evidence).count()
+
+    def search_records(self, q: str, limit: int = 25) -> List[EvidenceRecord]:
+        from app import models
+
+        needle = q.lower()
+        with SessionLocal() as session:
+            rows = (
+                session.query(models.Evidence)
+                .filter(
+                    (models.Evidence.evidence_id.ilike(f"%{needle}%"))
+                    | (models.Evidence.attribution_id.ilike(f"%{needle}%"))
+                    | (models.Evidence.address.ilike(f"%{needle}%"))
+                    | (models.Evidence.description.ilike(f"%{needle}%"))
+                )
+                .order_by(models.Evidence.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [_record_from_row(r) for r in rows]
 
 
 _db_repository: Optional[DbEvidenceRepository] = None

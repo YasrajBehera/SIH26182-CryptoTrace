@@ -130,6 +130,50 @@ class AlchemyClient:
 
         return collected[: self._pagination.max_transfers]
 
+    async def get_block_timestamps(
+        self, block_numbers: list[int]
+    ) -> dict[int, Any]:
+        """Resolve authoritative block timestamps from the chain.
+
+        ``eth_getBlockByNumber`` returns the exact timestamp the chain recorded
+        for each block, so ``block_number`` and ``block_timestamp`` in a
+        normalized transfer always share one source of truth. Unresolvable
+        blocks are omitted (the caller keeps whatever timestamp it has).
+        """
+        resolved: dict[int, Any] = {}
+        for block_number in block_numbers:
+            try:
+                ts = await self.get_block_timestamp(block_number)
+            except (AlchemyAPIError, AlchemyHTTPError):
+                ts = None
+            if ts is not None:
+                resolved[block_number] = ts
+        return resolved
+
+    async def get_block_timestamp(self, block_number: int) -> Optional[int]:
+        """Return the unix timestamp for a block, or None if unresolvable."""
+        from datetime import datetime, timezone
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_getBlockByNumber",
+            "params": [hex(block_number), False],
+        }
+        result = await self._rpc(payload)
+        if not isinstance(result, dict):
+            return None
+        ts_hex = result.get("timestamp")
+        if not ts_hex:
+            return None
+        try:
+            ts = int(str(ts_hex), 16)
+        except (TypeError, ValueError):
+            return None
+        if ts < 0:
+            return None
+        return int(datetime.fromtimestamp(ts, tz=timezone.utc).timestamp())
+
     async def _rpc(self, payload: dict[str, Any]) -> dict[str, Any]:
         client = self._get_client()
         try:

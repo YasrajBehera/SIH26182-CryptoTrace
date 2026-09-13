@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+from evidence.models import EvidenceRecord
+from risk.service import RiskAssessment
 
 InvestigationStatus = Literal[
     "draft", "open", "investigating", "review", "escalated", "closed"
@@ -48,6 +51,7 @@ class InvestigationOut(BaseModel):
     assigned_analyst: str = "Unassigned"
     created_by: int = 0
     latest_analysis_id: Optional[str] = None
+    latest_report_ids: List[str] = Field(default_factory=list)
     data_source: str = "demo"
     created_at: str
     updated_at: str
@@ -61,9 +65,45 @@ class InvestigationListResponse(BaseModel):
     source: str = "memory"
 
 
+class InvestigationNoteCreate(BaseModel):
+    """An analyst note attached to a case (persisted server-side)."""
+
+    body: str = Field(..., min_length=1, max_length=4000)
+    author: str = Field(..., min_length=1, max_length=128)
+
+
+class InvestigationNoteOut(BaseModel):
+    id: str
+    case_id: str
+    author: str
+    body: str
+    created_at: str
+
+
+class InvestigationNoteListResponse(BaseModel):
+    notes: List[InvestigationNoteOut] = Field(default_factory=list)
+    total: int = 0
+    case_id: str
+
+
 class ApplyAnalysisRequest(BaseModel):
     address: str
     analysis_id: str = Field(..., min_length=1)
     candidates: Optional[List[dict]] = None
     transactions: Optional[List[dict]] = None
     data_source: str = "demo"
+
+
+class InvestigationContext(BaseModel):
+    """Bundle of everything the investigation context surfaces: the case, its
+    wallet summary, the latest analysis, linked evidence, the analytical risk,
+    and generated reports. Everything here is persisted data — nothing is
+    fabricated."""
+
+    case: InvestigationOut
+    wallet_summary: Optional[Dict] = None
+    latest_analysis: Optional[Dict] = None
+    evidence: List[EvidenceRecord] = Field(default_factory=list)
+    risk: Optional[RiskAssessment] = None
+    reports: List[str] = Field(default_factory=list)
+    scope: str = "owned"

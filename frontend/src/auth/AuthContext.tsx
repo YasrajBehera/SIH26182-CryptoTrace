@@ -24,6 +24,7 @@ import { clearToken, getToken, hasValidToken } from "./tokenStore";
 
 const SESSION_KEY = "cryptotrace.session";
 const IDLE_TIMEOUT_MS = 30 * 60_000; // 30 minutes
+const AUTH_CHANGED_EVENT = "cryptotrace:authchanged";
 
 interface StoredSession {
   user: AppUser;
@@ -108,6 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // storage unavailable — session stays in memory
     }
+    // Let the data-source layer re-negotiate demo vs live immediately.
+    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
   }, []);
 
   const login = useCallback(
@@ -164,6 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setIsDemoAuth(true);
     setSessionExpired(false);
+    // Token is gone — the data-source layer must flip back to demo mode.
+    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
   }, []);
 
   // Restore token validity on boot: if a live token exists but is expired,

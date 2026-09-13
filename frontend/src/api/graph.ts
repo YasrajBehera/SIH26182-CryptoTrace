@@ -25,10 +25,22 @@ interface WireBfsNode {
   depth?: number;
 }
 
+interface WireBfsEdge {
+  source: string;
+  target: string;
+  tx_id?: string;
+  tx_hash?: string;
+  chain?: string;
+  amount?: string;
+  timestamp?: number;
+  block_number?: number;
+}
+
 interface WireBfsResponse {
   wallet_id: string;
   max_depth: number;
   nodes: WireBfsNode[];
+  edges?: WireBfsEdge[];
 }
 
 interface WireFlowRow {
@@ -81,8 +93,24 @@ function isoFromUnix(ts?: number | null): string | null {
   return new Date(ts * 1000).toISOString();
 }
 
-function walletNode(address: string): GraphNode {
-  return { id: address, address, type: "wallet", risk: "unknown", metadata: { asset: ASSET_LABEL } };
+/**
+ * A graph node is identified by its full ``chain:address`` id — the same
+ * namespace the backend uses for temporal-flow and BFS edges. Edge
+ * ``source``/``target`` values are full ids, so node ids MUST be full ids too,
+ * otherwise ReactFlow treats every edge endpoint as an orphan and the graph
+ * collapses ("no meaningful nodes"). ``address`` stays the bare address for
+ * display.
+ */
+function walletNode(nodeId: string, address?: string): GraphNode {
+  const display = address ?? (nodeId.includes(":") ? (nodeId.split(":").pop() ?? nodeId) : nodeId);
+  return { id: nodeId, address: display, type: "wallet", risk: "unknown", metadata: { asset: ASSET_LABEL } };
+}
+
+/** Full ``chain:address`` id for a bare address / existing backend node. */
+function nodeIdOf(node: WireBfsNode): string {
+  const walletId = node.wallet_id ?? "";
+  if (walletId.includes(":")) return walletId.toLowerCase();
+  return toWalletId(node.address ?? walletId, node.chain);
 }
 
 export interface GraphHealth {
@@ -99,7 +127,9 @@ export const graph = {
   async health(): Promise<GraphHealth> {
     if (isDemoMode()) return { status: "unavailable", provider: "synthetic" };
     try {
-      const res = await client.get<{ status?: string }>("/api/v1/graph/health", { timeoutMs: 4000 });
+      // Neo4j connect/acquire timeouts are 5s server-side; a shorter probe
+      // would hose the "engine unreachable" decision on the browser side.
+      const res = await client.get<{ status?: string }>("/api/v1/graph/health", { timeoutMs: 8000 });
       const ok = res.status === "ok";
       return { status: ok ? "ok" : "unavailable", provider: ok ? "neo4j" : "synthetic" };
     } catch {
@@ -115,7 +145,7 @@ export const graph = {
 
     const [bfs, flows] = await Promise.all([
       client.get<WireBfsResponse>(`/api/v1/graph/wallets/${encodeURIComponent(walletId)}/bfs`, {
-        query: { depth, max_nodes: 200 },
+        query: { depth, max_nodes: 200, max_edges: 500 },
       }),
       client.get<WireTemporalFlowResponse>(`/api/v1/graph/wallets/${encodeURIComponent(walletId)}/temporal-flow`, {
         query: { direction: "all", max_results: 500 },
@@ -124,29 +154,45 @@ export const graph = {
 
     const nodes: GraphNode[] = [];
     const seen = new Set<string>();
-    const addNode = (address: string) => {
-      if (!address || seen.has(address)) return;
-      seen.add(address);
-      nodes.push(walletNode(address));
+    const addNode = (nodeId: string, address?: string) => {
+      const id = nodeId.toLowerCase();
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      nodes.push(walletNode(id, address));
     };
 
-    (bfs.nodes ?? []).forEach((n) => addNode((n.address ?? n.wallet_id ?? "").toLowerCase()));
-    (flows.flows ?? []).forEach((f) => {
-      addNode(f.source.toLowerCase());
-      addNode(f.target.toLowerCase());
-    });
-
-    const edges: GraphEdge[] = (flows.flows ?? []).map((f, i) => ({
+    (bfs.nodes ?? []).forEach((n) => addNode(nodeIdOf(n), n.address));
+    const flowEdges = (flows.flows ?? []).map((f, i): GraphEdge => ({
       id: f.tx_id ?? `${f.tx_hash}-${i}`,
-      source: f.source,
-      target: f.target,
+      source: f.source.toLowerCase(),
+      target: f.target.toLowerCase(),
       transactionHash: f.tx_hash,
       asset: f.chain ? f.chain.toUpperCase() : ASSET_LABEL,
       amount: f.amount,
       timestamp: isoFromUnix(f.block_timestamp),
+      blockNumber: null,
+      direction: f.source === walletId ? "out" : f.target === walletId ? "in" : undefined,
+    }));
+    const bfsEdges = (bfs.edges ?? []).map((e, i): GraphEdge => ({
+      id: e.tx_id ?? e.tx_hash ?? `bfs-${i}`,
+      source: e.source.toLowerCase(),
+      target: e.target.toLowerCase(),
+      transactionHash: e.tx_hash ?? "",
+      asset: e.chain ? e.chain.toUpperCase() : ASSET_LABEL,
+      amount: e.amount ?? "",
+      timestamp: isoFromUnix(e.timestamp),
+      blockNumber: e.block_number ?? null,
     }));
 
-    return { nodes, edges };
+    flowEdges.forEach((e) => {
+      addNode(e.source);
+      addNode(e.target);
+    });
+
+    const byId = new Map<string, GraphEdge>();
+    [...flowEdges, ...bfsEdges].forEach((e) => byId.set(`${e.source}->${e.target}:${e.transactionHash}`, e));
+
+    return { nodes, edges: [...byId.values()] };
   },
 
   async path(from: string, to: string): Promise<GraphPath> {
@@ -167,7 +213,7 @@ export const graph = {
     });
 
     return {
-      nodes: walletPath.map((address) => walletNode(address.toLowerCase())),
+      nodes: walletPath.map((id) => walletNode(id)),
       edges: transactions.map((t) => ({
         id: t.tx_hash,
         source: t.sender,
@@ -176,6 +222,7 @@ export const graph = {
         asset: t.chain ? t.chain.toUpperCase() : ASSET_LABEL,
         amount: t.amount,
         timestamp: isoFromUnix(t.timestamp),
+        blockNumber: null,
       })),
       metrics: {
         pathLength: res.hop_count ?? Math.max(walletPath.length - 1, 0),

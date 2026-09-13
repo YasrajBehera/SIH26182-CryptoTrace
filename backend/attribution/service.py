@@ -73,7 +73,19 @@ class AttributionService:
 
         return neighbor_wallet_ids, enriched
 
-    def analyze(self, request: AttributionRequest) -> AttributionResponse:
+    @staticmethod
+    def _evidence_source(data_source: str) -> str:
+        """Evidence provenance reflects how the analysis was derived. Chain
+        evidence comes from real transaction data; everything else is synthetic
+        (demo). Never conflate the two."""
+        return "chain" if data_source == "live" else "synthetic"
+
+    def analyze(
+        self,
+        request: AttributionRequest,
+        *,
+        data_source: str = "demo",
+    ) -> AttributionResponse:
         address = request.address.lower()
         chain = request.chain
         analysis_id = f"attr-{uuid.uuid4().hex[:12]}"
@@ -83,8 +95,22 @@ class AttributionService:
             address, chain, request.graph_data
         )
 
+        # Select the reference directory that matches the analysis source. A
+        # live investigation is scored against the curated PUBLIC directory;
+        # demo analyses keep the synthetic seed so tests stay hermetic.
+        repo = self._intel.repository_for(data_source)
+        scorer = (
+            self._scorer
+            if data_source != "live"
+            else AttributionScorer(
+                vasp_repo=repo,
+                evidence_svc=self._evidence,
+                weights=self._scorer.weights,
+            )
+        )
+
         path_data = graph_data.get("path") if graph_data else None
-        candidate_vasps = self._collect_candidate_vasps(address, chain)
+        candidate_vasps = self._collect_candidate_vasps(address, chain, repo)
 
         candidates: List[AttributionCandidate] = []
 
@@ -93,37 +119,37 @@ class AttributionService:
             explanations: List[str] = []
             breakdown = ScoreBreakdown()
 
-            s_graph, e_graph = self._scorer.score_graph_proximity(
+            s_graph, e_graph = scorer.score_graph_proximity(
                 address, chain, neighbor_wallet_ids, path_data
             )
             breakdown.graph_proximity = s_graph
             explanations.extend(e_graph)
 
-            s_known, e_known = self._scorer.score_known_address_match(
+            s_known, e_known = scorer.score_known_address_match(
                 address, chain
             )
             breakdown.known_address_match = s_known
             explanations.extend(e_known)
 
-            s_temporal, e_temporal = self._scorer.score_temporal_consistency(
+            s_temporal, e_temporal = scorer.score_temporal_consistency(
                 address, chain, graph_data
             )
             breakdown.temporal_consistency = s_temporal
             explanations.extend(e_temporal)
 
-            s_flow, e_flow = self._scorer.score_transaction_flow(
+            s_flow, e_flow = scorer.score_transaction_flow(
                 address, chain, graph_data
             )
             breakdown.transaction_flow = s_flow
             explanations.extend(e_flow)
 
-            s_cluster, e_cluster = self._scorer.score_cluster_evidence(
+            s_cluster, e_cluster = scorer.score_cluster_evidence(
                 address, chain, graph_data
             )
             breakdown.cluster_evidence = s_cluster
             explanations.extend(e_cluster)
 
-            w = self._scorer.weights
+            w = scorer.weights
             total_score = (
                 s_graph * w.graph_proximity
                 + s_known * w.known_address_match
@@ -149,6 +175,7 @@ class AttributionService:
                         confidence=score / 100.0,
                         description="; ".join(desc),
                         method="attribution_engine_v1",
+                        source=self._evidence_source(data_source),
                     )
                     evidence_ids.append(record.evidence_id)
 
@@ -190,9 +217,9 @@ class AttributionService:
         )
 
     def _collect_candidate_vasps(
-        self, address: str, chain: str
+        self, address: str, chain: str, repo
     ) -> List[str]:
-        vasp_names = self._intel.repository.get_vasp_names_for_chain(chain)
+        vasp_names = repo.get_vasp_names_for_chain(chain)
         if not vasp_names:
-            vasp_names = [e.name for e in self._intel.repository.get_all_entities()]
+            vasp_names = [e.name for e in repo.get_all_entities()]
         return sorted(set(vasp_names))

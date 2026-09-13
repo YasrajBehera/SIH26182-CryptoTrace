@@ -19,11 +19,18 @@ _service = VASPIntelligenceService()
 def get_address_intelligence(
     address: str = Path(..., description="Wallet address to look up"),
     chain: str = Query("eth", description="Blockchain chain"),
+    data_source: str = Query(
+        "demo", description="'live' checks the curated public VASP directory"
+    ),
 ):
-    return _service.lookup_address(address.lower(), chain)
+    return _service.lookup_address(address.lower(), chain, data_source=data_source)
 
 
 @router.get("/vasp/names")
 def list_vasp_names(chain: str = Query("eth")):
-    names = _service.repository.get_vasp_names_for_chain(chain)
-    return {"chain": chain, "vasp_names": names}
+    # Live search operates against the curated PUBLIC directory (real entities).
+    # Synthetic names are demo-only and never surface through the API.
+    repo = _service.repository_for("live")
+    names = set(repo.get_vasp_names_for_chain(chain))
+    names.update(e.name for e in repo.get_all_entities())
+    return {"chain": chain, "vasp_names": sorted(names)}

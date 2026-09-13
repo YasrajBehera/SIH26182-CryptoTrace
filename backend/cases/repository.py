@@ -36,10 +36,21 @@ def _row_to_dict(row) -> dict:
         "latest_candidates": row.latest_candidates or [],
         "evidence_count": row.evidence_count or 0,
         "assigned_analyst": row.assigned_analyst or "Unassigned",
+        "latest_report_ids": list(row.latest_report_ids or []),
         "created_by": row.created_by,
         "created_at": row.created_at.isoformat() if row.created_at else _now_iso(),
         "updated_at": row.updated_at.isoformat() if row.updated_at else _now_iso(),
         "tags": list(row.tags or []),
+    }
+
+
+def _note_to_dict(row) -> dict:
+    return {
+        "id": row.id,
+        "case_id": row.case_id,
+        "author": row.author,
+        "body": row.body,
+        "created_at": row.created_at.isoformat() if row.created_at else _now_iso(),
     }
 
 
@@ -59,6 +70,12 @@ class InvestigationRepository:
     def delete(self, case_id: str) -> bool:
         raise NotImplementedError
 
+    def list_notes(self, case_id: str) -> List[dict]:
+        raise NotImplementedError
+
+    def add_note(self, case_id: str, note: dict) -> dict:
+        raise NotImplementedError
+
 
 class MemoryInvestigationRepository(InvestigationRepository):
     is_demo: bool = True
@@ -66,6 +83,7 @@ class MemoryInvestigationRepository(InvestigationRepository):
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._records: Dict[str, dict] = {}
+        self._notes: Dict[str, List[dict]] = {}
 
     def create(self, payload: dict) -> dict:
         now = _now_iso()
@@ -84,6 +102,7 @@ class MemoryInvestigationRepository(InvestigationRepository):
             "latest_candidates": [],
             "evidence_count": 0,
             "assigned_analyst": payload.get("assigned_analyst", "Unassigned"),
+            "latest_report_ids": [],
             "created_by": payload.get("created_by", 0),
             "tags": list(payload.get("tags", [])),
             "created_at": now,
@@ -133,7 +152,7 @@ class MemoryInvestigationRepository(InvestigationRepository):
                 "priority", "risk", "status", "assigned_analyst",
                 "latest_analysis_id", "latest_data_source",
                 "latest_transactions", "latest_candidates",
-                "evidence_count", "tags",
+                "evidence_count", "latest_report_ids", "tags",
             }
             for key, value in fields.items():
                 if key in allowed:
@@ -144,6 +163,24 @@ class MemoryInvestigationRepository(InvestigationRepository):
     def delete(self, case_id: str) -> bool:
         with self._lock:
             return self._records.pop(case_id, None) is not None
+
+    def list_notes(self, case_id: str) -> List[dict]:
+        with self._lock:
+            notes = list(self._notes.get(case_id, []))
+        notes.sort(key=lambda n: n.get("created_at", ""))
+        return notes
+
+    def add_note(self, case_id: str, note: dict) -> dict:
+        record = {
+            "id": f"note-{uuid.uuid4().hex[:8]}",
+            "case_id": case_id,
+            "author": note.get("author", "Unassigned"),
+            "body": note.get("body", ""),
+            "created_at": _now_iso(),
+        }
+        with self._lock:
+            self._notes.setdefault(case_id, []).append(record)
+        return dict(record)
 
 
 class DbInvestigationRepository(InvestigationRepository):
@@ -212,7 +249,7 @@ class DbInvestigationRepository(InvestigationRepository):
             "priority", "risk", "status", "assigned_analyst",
             "latest_analysis_id", "latest_data_source",
             "latest_transactions", "latest_candidates",
-            "evidence_count", "tags",
+            "evidence_count", "latest_report_ids", "tags",
         }
         with SessionLocal() as session:
             row = (
@@ -241,6 +278,42 @@ class DbInvestigationRepository(InvestigationRepository):
             )
             session.commit()
             return deleted > 0
+
+    def list_notes(self, case_id: str) -> List[dict]:
+        from app import models
+
+        with SessionLocal() as session:
+            rows = (
+                session.query(models.InvestigationNote)
+                .filter(models.InvestigationNote.case_id == case_id)
+                .order_by(models.InvestigationNote.created_at.asc())
+                .all()
+            )
+            return [_note_to_dict(r) for r in rows]
+
+    def add_note(self, case_id: str, note: dict) -> dict:
+        from app import models
+
+        with SessionLocal() as session:
+            row = models.InvestigationNote(
+                id=f"note-{uuid.uuid4().hex[:8]}",
+                case_id=case_id,
+                author=note.get("author", "Unassigned"),
+                body=note.get("body", ""),
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            note_record = _note_to_dict(row)
+            touch = (
+                session.query(models.Investigation)
+                .filter(models.Investigation.id == case_id)
+                .first()
+            )
+            if touch is not None:
+                touch.updated_at = datetime.now(timezone.utc)
+                session.commit()
+            return note_record
 
 
 _memory_repository: Optional[MemoryInvestigationRepository] = None

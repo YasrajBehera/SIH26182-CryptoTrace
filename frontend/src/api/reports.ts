@@ -1,5 +1,5 @@
+import { client, type BlobResult } from "./client";
 import { isDemoMode } from "./config";
-import { getToken } from "@/auth/tokenStore";
 import type { ReportConfig, ReportSectionKey } from "./types";
 
 /**
@@ -31,29 +31,15 @@ function toSnakeCaseMetadata(config: ReportConfig): Record<string, unknown> {
 }
 
 async function fetchReportBlob(config: ReportConfig): Promise<{ blob: Blob; reportId: string }> {
-  const authToken = getToken();
-  const res = await fetch("/api/v1/reports/export", {
-    method: "POST",
-    headers: {
-      Accept: "application/pdf",
-      "Content-Type": "application/json",
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-    },
-    body: JSON.stringify({ metadata: toSnakeCaseMetadata(config), sections: config.sections }),
-  });
-  if (!res.ok) {
-    let detail = "";
-    try {
-      const body = (await res.json()) as { detail?: string };
-      detail = body?.detail ?? "";
-    } catch {
-      // Non-JSON errors keep the generic message.
-    }
-    throw new Error(detail || `The report service could not generate the PDF (HTTP ${res.status}).`);
-  }
-  const blob = await res.blob();
+  // The central client attaches the bearer token, normalizes errors, and fires
+  // cryptotrace:unauthorized on a 401 so the session layer re-authenticates.
+  const res = await client.postBlob<BlobResult>(
+    "/api/v1/reports/export",
+    { metadata: toSnakeCaseMetadata(config), sections: config.sections },
+    { headers: { Accept: "application/pdf" }, timeoutMs: 120000 },
+  );
   const reportId = res.headers.get("X-CryptoTrace-Report-Id") ?? `rpt-${Date.now()}`;
-  return { blob, reportId };
+  return { blob: res.blob, reportId };
 }
 
 export const reports = {
@@ -72,11 +58,6 @@ export const reports = {
 };
 
 async function fetchReportSections(): Promise<ReportSectionKey[]> {
-  const authToken = getToken();
-  const res = await fetch("/api/v1/reports/sections", {
-    headers: { Accept: "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
-  });
-  if (!res.ok) return [];
-  const body = (await res.json()) as { sections?: ReportSectionKey[] };
+  const body = await client.get<{ sections?: ReportSectionKey[] }>("/api/v1/reports/sections");
   return body?.sections ?? [];
 }

@@ -65,6 +65,34 @@ def test_sync_from_postgres(monkeypatch, fake_driver):
     assert params["value"] == "1000000000000000000"
 
 
+def test_merge_transactions_writes_durable_rows(fake_driver):
+    rows = [
+        {
+            "chain": "ETH",
+            "tx_hash": "0xABC",
+            "block_number": 10,
+            "block_timestamp": 1704067200,
+            "from_address": "0x1111111111111111111111111111111111111111",
+            "to_address": "0x2222222222222222222222222222222222222222",
+            "value": "500000000000000000",
+        }
+    ]
+    synced = service.merge_transactions(fake_driver, rows)
+    assert synced == 1
+
+    merges = [
+        (query, params)
+        for (query, params) in fake_driver._session.queries
+        if "MERGE (tx:Transaction" in query
+    ]
+    assert len(merges) == 1
+    params = merges[0][1]
+    assert params["tx_id"] == "eth:0xabc"
+    assert params["src_wid"] == "eth:0x1111111111111111111111111111111111111111"
+    assert params["dst_wid"] == "eth:0x2222222222222222222222222222222222222222"
+    assert params["block_timestamp"] == 1704067200
+
+
 def test_bfs_returns_neighbors_by_depth(fake_session, fake_driver):
     fake_session.bfs_records = [
         {"wallet_id": "eth:0xbb", "address": "0xbb", "chain": "eth", "depth": 1},
@@ -119,8 +147,82 @@ def test_bfs_runs_on_live_neo4j_no_syntax_error():
 
 
 def test_dfs_returns_distinct_wallets(fake_session, fake_driver):
+    fake_session.bfs_records = [
+        {"wallet_id": "eth:0xcc", "address": "0xcc", "chain": "eth", "depth": 1},
+        {"wallet_id": "eth:0xbb", "address": "0xbb", "chain": "eth", "depth": 1},
+    ]
     rows = service.dfs(fake_driver, "eth:0xaa", max_depth=4)
-    assert rows[0]["wallet_id"] == "eth:0xbb"
+    assert rows[0]["wallet_id"] == "eth:0xaa"
+    assert rows[0]["address"] == "0xaa"
+    assert rows[0]["chain"] == "eth"
+    visited = [row["wallet_id"] for row in rows]
+    assert "eth:0xaa" in visited
+    assert len(rows) == len(set(visited))
+
+
+def test_dfs_never_requires_apoc():
+    assert "apoc.path.expand" not in service.NEIGHBORS_QUERY
+    for bad in (0, -1, 51, "abc", None, "3; MATCH (x) DETACH DELETE x"):
+        with pytest.raises((ValueError, TypeError)):
+            service.dfs(fake_driver_arg_noop(), "eth:0xaa", max_depth=bad)
+
+
+def fake_driver_arg_noop():
+    return None
+
+
+def test_neighbors_returns_only_direct_counterparts(fake_session, fake_driver):
+    fake_session.bfs_records = [
+        {"wallet_id": "eth:0xbb", "address": "0xbb", "chain": "eth", "depth": 1},
+        {"wallet_id": "eth:0xcc", "address": "0xcc", "chain": "eth", "depth": 1},
+    ]
+    rows = service.neighbors(fake_driver, "eth:0xaa")
+    assert [row["depth"] for row in rows] == [1, 1]
+    assert all(row["wallet_id"] in {"eth:0xbb", "eth:0xcc"} for row in rows)
+
+
+def test_neighbors_query_spans_transaction_in_both_directions():
+    query = service.NEIGHBORS_QUERY
+    assert "(start)-[:SENT]->(tx:Transaction)-[:RECEIVED]->(other:Wallet)" in query
+    assert "(other:Wallet)-[:SENT]->(tx:Transaction)-[:RECEIVED]->(start)" in query
+
+
+def test_temporal_flow_queries_use_correct_relationship_direction():
+    out_query = service.TEMPLATE_OUT_FLOW
+    in_query = service.TEMPLATE_IN_FLOW
+    assert (
+        "(wallet)-[s:SENT]->(tx:Transaction)-[r:RECEIVED]->(counterparty:Wallet)"
+        in out_query
+    )
+    assert (
+        "(counterparty:Wallet)-[s:SENT]->(tx:Transaction)-[r:RECEIVED]->(wallet)"
+        in in_query
+    )
+    assert "<-[r:RECEIVED]" not in out_query
+    assert "<-[r:RECEIVED]" not in in_query
+
+
+def test_temporal_flow_direction_out_uses_out_template(fake_session, fake_driver):
+    service.temporal_flow(fake_driver, "eth:0xwallet", direction="out")
+    query = fake_session.queries[0][0]
+    assert "(wallet)-[s:SENT]->(tx:Transaction)-[r:RECEIVED]->(counterparty:Wallet)" in query
+
+
+def test_clusters_uses_component_column_for_wcc():
+    query = service.CLUSTER_QUERY.format(
+        procedure=service.CLUSTER_PROCEDURES["wcc"],
+        column=service.CLUSTER_COLUMNS["wcc"],
+    )
+    assert "YIELD nodeId, componentId" in query
+    assert "WITH componentId AS community_id" in query
+
+
+def test_clusters_uses_community_column_for_louvain():
+    query = service.CLUSTER_QUERY.format(
+        procedure=service.CLUSTER_PROCEDURES["louvain"],
+        column=service.CLUSTER_COLUMNS["louvain"],
+    )
+    assert "YIELD nodeId, communityId" in query
 
 
 def test_shortest_path_unweighted(fake_session, fake_driver):
@@ -137,7 +239,7 @@ def test_shortest_path_weighted_by_amount(fake_session, fake_driver):
     )
     assert result["weight"] == "amount"
     _, params = fake_session.queries[-1]
-    assert params["weight"] == "amount"
+    assert params["weight"] == "amount_value"
 
 
 def test_shortest_path_missing_target(fake_session, fake_driver):

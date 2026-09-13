@@ -62,6 +62,14 @@ class WalletRepository:
     def get_summary(self, address: str, chain: str) -> Optional[Dict]:
         raise NotImplementedError
 
+    def list_summaries(self) -> List[Dict]:
+        """Return every stored wallet summary (global search)."""
+        raise NotImplementedError
+
+    def search_transactions(self, q: str, limit: int = 25) -> List[Dict]:
+        """Return up to ``limit`` stored transactions whose hash contains q."""
+        raise NotImplementedError
+
 
 class MemoryWalletRepository(WalletRepository):
     is_demo = True
@@ -173,6 +181,21 @@ class MemoryWalletRepository(WalletRepository):
         with self._lock:
             record = self._summaries.get((address.lower(), chain))
             return dict(record) if record else None
+
+    def list_summaries(self) -> List[Dict]:
+        with self._lock:
+            return [dict(record) for record in self._summaries.values()]
+
+    def search_transactions(self, q: str, limit: int = 25) -> List[Dict]:
+        q = q.lower()
+        with self._lock:
+            rows = [
+                dict(r)
+                for r in self._transactions.values()
+                if q in (r.get("tx_hash") or "").lower()
+            ]
+        rows.sort(key=lambda r: _safe_int(r.get("block_timestamp")))
+        return rows[:limit]
 
 
 class DbWalletRepository(WalletRepository):
@@ -407,6 +430,57 @@ class DbWalletRepository(WalletRepository):
             "risk_score": wallet.risk_score,
             "investigation_status": wallet.investigation_status,
         }
+
+    def list_summaries(self) -> List[Dict]:
+        from app import models as app_models
+
+        with SessionLocal() as session:
+            wallets = session.query(app_models.Wallet).all()
+        return [
+            {
+                "address": w.address,
+                "chain": w.chain,
+                "first_seen": int(w.first_seen.timestamp()) if w.first_seen else None,
+                "last_activity": int(w.last_activity.timestamp()) if w.last_activity else None,
+                "transaction_count": w.transaction_count,
+                "incoming_volume": str(w.incoming_volume),
+                "outgoing_volume": str(w.outgoing_volume),
+                "balance": str(w.balance) if w.balance is not None else None,
+                "risk": w.risk,
+                "risk_score": w.risk_score,
+                "investigation_status": w.investigation_status,
+            }
+            for w in wallets
+        ]
+
+    def search_transactions(self, q: str, limit: int = 25) -> List[Dict]:
+        from app import models as app_models
+
+        needle = q.lower()
+        with SessionLocal() as session:
+            rows = (
+                session.query(app_models.Transaction)
+                .filter(app_models.Transaction.tx_hash.ilike(f"%{needle}%"))
+                .order_by(app_models.Transaction.block_timestamp)
+                .limit(limit)
+                .all()
+            )
+        return [
+            {
+                "chain": tx.chain,
+                "tx_hash": tx.tx_hash,
+                "block_number": tx.block_number,
+                "block_timestamp": int(tx.block_timestamp.timestamp())
+                if tx.block_timestamp
+                else 0,
+                "from_address": tx.from_address,
+                "to_address": tx.to_address,
+                "value": str(tx.value),
+                "fee": str(tx.fee) if tx.fee is not None else None,
+                "token_symbol": tx.token_symbol,
+            }
+            for tx in rows
+        ]
 
 
 _memory_repository: Optional[MemoryWalletRepository] = None

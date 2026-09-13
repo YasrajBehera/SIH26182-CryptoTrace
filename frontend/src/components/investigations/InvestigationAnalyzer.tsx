@@ -257,7 +257,7 @@ export function InvestigationAnalyzer() {
               </div>
             ) : (
               <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
-                No known-address intelligence for this wallet in the current (synthetic) dataset.
+                No known-address intelligence for this wallet in {result.isDemo ? "the (synthetic) dataset" : "the curated public VASP directory"}.
               </p>
             )}
           </Card>

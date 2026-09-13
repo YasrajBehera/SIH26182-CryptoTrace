@@ -7,10 +7,12 @@ import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
 import { TransferTable } from "@/components/transfers/TransferTable";
 import { TransferDrawer } from "@/components/transfers/TransferDrawer";
-import type { BlockchainTransfer } from "@/api/types";
+import type { BlockchainTransfer, WalletTransfers } from "@/api/types";
 import { validateAddressInput } from "@/lib/address";
 import { demoWallets } from "@/mock";
 import { ShortAddress } from "@/components/ui";
+
+const PAGE_SIZE = 25;
 
 export function TransactionsPage() {
   const [params, setParams] = useSearchParams();
@@ -20,17 +22,26 @@ export function TransactionsPage() {
   const { isDemo } = useDataSource();
   const { can } = useAuth();
 
-  const { data, loading, error, reload } = useApi<BlockchainTransfer[] | null>(
+  // Server-side pagination (LIVE mode): the backend slices the sorted held
+  // transfer set; offset/has_next/has_previous come back in `pagination`.
+  // DEMO mode sidesteps the backend entirely (labeled synthetic data).
+  const [offset, setOffset] = useState(0);
+  const [direction, setDirection] = useState<"all" | "in" | "out">("all");
+  const serverPaginated = !isDemo && !!submitted && validateAddressInput(submitted) === null;
+
+  const { data, loading, error, reload } = useApi<WalletTransfers | null>(
     () =>
       submitted && validateAddressInput(submitted) === null
-        ? wallets.getTransfers(submitted, 1000).then((r) => r.transfers)
-        : Promise.resolve([]),
-    [submitted],
+        ? wallets.getTransfers(submitted, PAGE_SIZE, {
+            offset,
+            direction: direction === "all" ? undefined : direction,
+          })
+        : Promise.resolve(null),
+    [submitted, offset, direction],
   );
 
-  // Filters
+  // Client-side filters (applied within the loaded page)
   const [q, setQ] = useState(params.get("hash") ?? "");
-  const [direction, setDirection] = useState("all");
   const [asset, setAsset] = useState("all");
   const [chain, setChain] = useState("all");
   const [minAmount, setMinAmount] = useState("");
@@ -39,7 +50,8 @@ export function TransactionsPage() {
 
   const [selected, setSelected] = useState<BlockchainTransfer | null>(null);
 
-  const transfers = useMemo(() => data ?? [], [data]);
+  const transfers = useMemo(() => data?.transfers ?? [], [data]);
+  const pagination = data?.pagination;
   const assets = useMemo(
     () => Array.from(new Set(transfers.map((t) => t.asset))).sort(),
     [transfers],
@@ -53,7 +65,7 @@ export function TransactionsPage() {
     () =>
       transfers.filter((t) => {
         if (q && !t.transaction_hash.toLowerCase().includes(q.toLowerCase())) return false;
-        if (direction !== "all" && t.direction !== direction) return false;
+        if (!serverPaginated && direction !== "all" && t.direction !== direction) return false;
         if (asset !== "all" && t.asset !== asset) return false;
         if (chain !== "all" && t.chain !== chain) return false;
         if (minAmount && (Number(t.value) || 0) < Number(minAmount)) return false;
@@ -65,13 +77,16 @@ export function TransactionsPage() {
         }
         return true;
       }),
-    [transfers, q, direction, asset, chain, minAmount, fromDate, toDate],
+    [transfers, q, direction, asset, chain, minAmount, fromDate, toDate, serverPaginated],
   );
+
+  const hasFilters = q || asset !== "all" || chain !== "all" || minAmount || fromDate || toDate;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (validateAddressInput(wallet) !== null) return;
     setSubmitted(wallet);
+    setOffset(0);
     setParams({ wallet });
   };
 
@@ -121,6 +136,7 @@ export function TransactionsPage() {
                 onClick={() => {
                   setWalletState(w);
                   setSubmitted(w);
+                  setOffset(0);
                   setParams({ wallet: w });
                 }}
               >
@@ -141,7 +157,15 @@ export function TransactionsPage() {
           onChange={(e) => setQ(e.target.value)}
           aria-label="Filter by transaction hash"
         />
-        <Select value={direction} onChange={(e) => setDirection(e.target.value)} aria-label="Direction" style={{ maxWidth: 150 }}>
+        <Select
+          value={direction}
+          onChange={(e) => {
+            setDirection(e.target.value as "all" | "in" | "out");
+            setOffset(0);
+          }}
+          aria-label="Direction"
+          style={{ maxWidth: 170 }}
+        >
           <option value="all">Incoming + outgoing</option>
           <option value="in">Incoming</option>
           <option value="out">Outgoing</option>
@@ -204,10 +228,54 @@ export function TransactionsPage() {
       ) : transfers.length === 0 ? (
         <EmptyState title="No transfers" description="No normalized transfers returned for this wallet." />
       ) : (
-        <TransferTable transfers={filtered} demo={isDemo} onRowClick={setSelected} pagination={{ pageSize: 15 }} />
+        <>
+          {serverPaginated && hasFilters ? (
+            <div style={{ marginBottom: 8, color: "var(--text-dim)", fontSize: "var(--text-sm)" }}>
+              Filters apply within the currently loaded page. The direction filter is applied server-side and preserved
+              across pages.
+            </div>
+          ) : null}
+          <TransferTable
+            transfers={filtered}
+            demo={isDemo}
+            onRowClick={setSelected}
+            clientPagination={!serverPaginated}
+          />
+          {serverPaginated ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!pagination?.has_previous}
+                onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+              >
+                ← Previous
+              </Button>
+              <span className="text-dim" style={{ fontSize: "var(--text-sm)" }}>
+                {transfers.length > 0
+                  ? `Rows ${(pagination?.offset ?? 0) + 1}–${(pagination?.offset ?? 0) + transfers.length}`
+                  : "No rows"}
+                {typeof pagination?.total === "number" ? ` of ${pagination.total}` : ""} held transfers
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!pagination?.has_next}
+                onClick={() => setOffset((o) => o + PAGE_SIZE)}
+              >
+                Next →
+              </Button>
+              {pagination?.truncated ? (
+                <Badge className="status-warn" title="On-chain history may extend beyond the provider fetch cap.">
+                  Truncated
+                </Badge>
+              ) : null}
+            </div>
+          ) : null}
+        </>
       )}
 
-      <TransferDrawer transfer={selected} onClose={() => setSelected(null)} />
+      <TransferDrawer transfer={selected} onClose={() => setSelected(null)} demo={isDemo} />
     </div>
   );
 }

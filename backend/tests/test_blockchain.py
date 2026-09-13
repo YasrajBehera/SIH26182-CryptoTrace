@@ -37,10 +37,13 @@ class FakeAlchemyClient:
         self,
         response_for: dict[str, list[dict[str, Any]]] | None = None,
         error: Optional[Exception] = None,
+        block_timestamps: dict[int, int] | None = None,
     ) -> None:
         self._response_for = response_for or {"from": [], "to": []}
         self._error = error
+        self._block_timestamps = block_timestamps or {}
         self.calls: list[tuple[str, str]] = []
+        self.block_timestamp_calls: list[int] = []
 
     async def __aenter__(self):
         return self
@@ -58,6 +61,16 @@ class FakeAlchemyClient:
         if self._error is not None:
             raise self._error
         return list(self._response_for.get(direction, []))
+
+    async def get_block_timestamps(
+        self, block_numbers: list[int]
+    ) -> dict[int, int]:
+        self.block_timestamp_calls.extend(block_numbers)
+        return {
+            bn: ts
+            for bn, ts in self._block_timestamps.items()
+            if bn in set(block_numbers)
+        }
 
 
 def make_eth(hash_, wallet, direction="in", block="0x10"):
@@ -265,6 +278,82 @@ class TestService:
         assert len(result.transfers) == 2
         assert result.pagination.truncated is True
 
+    def test_offset_slices_held_set(self):
+        # `make_eth` rows share one timestamp, so the stable sort preserves
+        # input order and slicing is deterministic.
+        svc = BlockchainService(pagination=PaginationConfig(max_transfers=1000))
+        rows = [make_eth(f"0x{i}", VALID_LOWER) for i in range(5)]
+        fake = FakeAlchemyClient(response_for={"to": rows, "from": []})
+        result = _run(svc, fake, VALID_ADDRESS, limit=2, offset=2)
+        hashes = [t.transaction_hash for t in result.transfers]
+        assert hashes == ["0x2", "0x3"]
+        assert result.pagination.offset == 2
+        assert result.pagination.total == 5
+        assert result.pagination.fetched == 2
+        assert result.pagination.truncated is False
+        assert result.pagination.has_next is True
+        assert result.pagination.has_previous is True
+
+    def test_last_page_has_no_next(self):
+        svc = BlockchainService(pagination=PaginationConfig(max_transfers=1000))
+        rows = [make_eth(f"0x{i}", VALID_LOWER) for i in range(5)]
+        fake = FakeAlchemyClient(response_for={"to": rows, "from": []})
+        result = _run(svc, fake, VALID_ADDRESS, limit=5, offset=0)
+        assert len(result.transfers) == 5
+        assert result.pagination.has_next is False
+        assert result.pagination.has_previous is False
+        assert result.pagination.total == 5
+
+    def test_middle_page_has_both_edges(self):
+        svc = BlockchainService(pagination=PaginationConfig(max_transfers=1000))
+        rows = [make_eth(f"0x{i}", VALID_LOWER) for i in range(5)]
+        fake = FakeAlchemyClient(response_for={"to": rows, "from": []})
+        result = _run(svc, fake, VALID_ADDRESS, limit=2, offset=2)
+        assert result.pagination.has_next is True
+        assert result.pagination.has_previous is True
+
+    def test_offset_past_end_returns_empty_page(self):
+        svc = BlockchainService(pagination=PaginationConfig(max_transfers=1000))
+        rows = [make_eth(f"0x{i}", VALID_LOWER) for i in range(5)]
+        fake = FakeAlchemyClient(response_for={"to": rows, "from": []})
+        result = _run(svc, fake, VALID_ADDRESS, limit=2, offset=10)
+        assert result.transfers == []
+        assert result.pagination.total == 5
+        assert result.pagination.has_next is False
+        assert result.pagination.has_previous is True
+
+    def test_direction_filter_fetches_only_requested_side(self):
+        svc = BlockchainService(pagination=PaginationConfig(max_transfers=1000))
+        incoming = [make_eth(f"0x{i}", VALID_LOWER, direction="in") for i in range(2)]
+        outgoing = [make_eth(f"0x{i}", VALID_LOWER, direction="out") for i in range(3)]
+        fake = FakeAlchemyClient(response_for={"to": incoming, "from": outgoing})
+        result = _run(svc, fake, VALID_ADDRESS, direction="out")
+        assert fake.calls == [(VALID_LOWER, "from")]
+        assert len(result.transfers) == 3
+        assert all(t.direction == "out" for t in result.transfers)
+        assert result.pagination.total == 3
+
+    def test_direction_filter_in_fetches_only_incoming(self):
+        svc = BlockchainService(pagination=PaginationConfig(max_transfers=1000))
+        incoming = [make_eth(f"0x{i}", VALID_LOWER, direction="in") for i in range(2)]
+        outgoing = [make_eth(f"0x{i}", VALID_LOWER, direction="out") for i in range(3)]
+        fake = FakeAlchemyClient(response_for={"to": incoming, "from": outgoing})
+        result = _run(svc, fake, VALID_ADDRESS, direction="in")
+        assert fake.calls == [(VALID_LOWER, "to")]
+        assert all(t.direction == "in" for t in result.transfers)
+
+    def test_direction_filter_invalid_raises(self):
+        svc = BlockchainService(pagination=PaginationConfig(max_transfers=1000))
+        fake = FakeAlchemyClient()
+        with pytest.raises(ValueError):
+            _run(svc, fake, VALID_ADDRESS, direction="sideways")
+
+    def test_offset_negative_raises(self):
+        svc = BlockchainService(pagination=PaginationConfig(max_transfers=1000))
+        fake = FakeAlchemyClient()
+        with pytest.raises(ValueError):
+            _run(svc, fake, VALID_ADDRESS, offset=-1)
+
     def test_invalid_address_raises(self, service):
         fake = FakeAlchemyClient()
         with pytest.raises(InvalidAddressError):
@@ -276,11 +365,176 @@ def _run(
     fake: FakeAlchemyClient,
     address: str,
     limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    direction: Optional[str] = None,
+    refresh: bool = False,
 ) -> WalletTransfers:
     import asyncio
 
     service._client = fake
-    return asyncio.run(service.get_wallet_transfers(address, limit=limit))
+    return asyncio.run(
+        service.get_wallet_transfers(
+            address, limit=limit, offset=offset, direction=direction, refresh=refresh
+        )
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Persisted wallet store (source="database")
+# --------------------------------------------------------------------------- #
+class TestPersistedTransfers:
+    """Regression: transfers must be served from the persisted wallet store when
+    rows already exist, so every page/surface sees the same canonical set instead
+    of re-hitting the blockchain provider (which caused 502s/timeouts and
+    per-page variation in the live demo).
+    """
+
+    @staticmethod
+    def make_rows(address, n=5, base_ts=1700000000, base_block=1000, direction="in"):
+        from wallets.repository import MemoryWalletRepository
+
+        repo = MemoryWalletRepository()
+        counterparty = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        rows = []
+        for i in range(n):
+            if direction == "out":
+                from_addr, to_addr = address, counterparty
+            else:
+                from_addr, to_addr = counterparty, address
+            rows.append(
+                {
+                    "chain": "eth",
+                    "tx_hash": f"0xpersist{i:03d}",
+                    "block_number": base_block + i,
+                    "block_timestamp": base_ts + i,
+                    "from_address": from_addr,
+                    "to_address": to_addr,
+                    "value": "10",
+                    "fee": None,
+                    "token_symbol": "ETH",
+                }
+            )
+        repo.store_transactions(rows)
+        return repo
+
+    @staticmethod
+    def svc(fake, repo=None):
+        from wallets.repository import MemoryWalletRepository
+
+        return BlockchainService(
+            client=fake,
+            pagination=PaginationConfig(max_pages=20, max_transfers=1000),
+            wallet_repository=repo or MemoryWalletRepository(),
+        )
+
+    def test_serves_persisted_rows_without_calling_provider(self):
+        repo = self.make_rows(VALID_LOWER)
+        fake = FakeAlchemyClient()
+        result = _run(self.svc(fake, repo), fake, VALID_ADDRESS)
+
+        assert result.pagination.source == "database"
+        assert result.pagination.total == 5
+        assert len(result.transfers) == 5
+        assert fake.calls == []  # provider never consulted
+
+    def test_persisted_rows_have_chain_block_timestamps(self):
+        repo = self.make_rows(VALID_LOWER)
+        fake = FakeAlchemyClient()
+        result = _run(self.svc(fake, repo), fake, VALID_ADDRESS)
+
+        assert all(t.block_timestamp is not None for t in result.transfers)
+        assert result.transfers[0].block_timestamp.isoformat().startswith("2023-11-14T")
+        assert [t.block_number for t in result.transfers] == list(range(1000, 1005))
+
+    def test_paginates_persisted_rows_server_side(self):
+        repo = self.make_rows(VALID_LOWER, n=5)
+        fake = FakeAlchemyClient()
+        first = _run(self.svc(fake, repo), fake, VALID_ADDRESS, limit=2, offset=0)
+        assert len(first.transfers) == 2
+        assert first.pagination.total == 5
+        assert first.pagination.has_next is True
+        assert first.pagination.has_previous is False
+
+        last = _run(self.svc(fake, repo), fake, VALID_ADDRESS, limit=2, offset=4)
+        assert len(last.transfers) == 1
+        assert last.pagination.has_next is False
+        assert last.pagination.has_previous is True
+
+    def test_direction_filter_applies_to_persisted_rows(self):
+        repo = self.make_rows(VALID_LOWER, n=3, direction="in")
+        repo.store_transactions(
+            [
+                {
+                    "chain": "eth",
+                    "tx_hash": "0xout001",
+                    "block_number": 2000,
+                    "block_timestamp": 1800000000,
+                    "from_address": VALID_LOWER,
+                    "to_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "value": "5",
+                    "fee": None,
+                    "token_symbol": "ETH",
+                }
+            ]
+        )
+        fake = FakeAlchemyClient()
+        out = _run(self.svc(fake, repo), fake, VALID_ADDRESS, direction="out")
+        assert [t.transaction_hash for t in out.transfers] == ["0xout001"]
+        assert out.pagination.total == 1
+        assert all(t.direction == "out" for t in out.transfers)
+        assert fake.calls == []
+
+    def test_refresh_forces_provider_fetch_even_with_persisted_rows(self):
+        repo = self.make_rows(VALID_LOWER, n=3)
+        fresh = make_eth("0xfresh", VALID_LOWER, direction="in")
+        fake = FakeAlchemyClient(response_for={"to": [fresh], "from": []})
+        result = _run(self.svc(fake, repo), fake, VALID_ADDRESS, refresh=True)
+
+        assert result.pagination.source == "provider"
+        assert fake.calls != []
+        # Provider result persisted alongside the previous rows.
+        assert repo.transaction_count() == 4
+
+    def test_provider_fetch_persists_normalized_rows(self):
+        repo = self.__class__.make_rows_blank()
+        incoming = [make_eth(f"0xP{i}", VALID_LOWER, direction="in") for i in range(2)]
+        fake = FakeAlchemyClient(response_for={"to": incoming, "from": []})
+        result = _run(self.svc(fake, repo), fake, VALID_ADDRESS)
+
+        assert result.pagination.source == "provider"
+        assert repo.transaction_count() == 2
+        assert result.pagination.total == 2
+
+    def test_block_timestamp_backfilled_from_chain_block(self):
+        # A provider row WITHOUT metadata.blockTimestamp gets its timestamp
+        # resolved from the chain block (eth_getBlockByNumber) and the value is
+        # a real timezone-aware datetime, not a raw epoch int.
+        svc = BlockchainService(
+            pagination=PaginationConfig(max_pages=20, max_transfers=1000),
+            wallet_repository=None,
+        )
+        raw = make_eth("0xchaintime", VALID_LOWER, direction="in", block="0x40")
+        raw["metadata"] = {}  # no provider timestamp
+        fake = FakeAlchemyClient(
+            response_for={"to": [raw], "from": []},
+            block_timestamps={0x40: 1700000000},
+        )
+        result = _run(svc, fake, VALID_ADDRESS)
+
+        assert len(result.transfers) == 1
+        t = result.transfers[0]
+        assert t.block_number == 0x40
+        assert t.block_timestamp is not None
+        assert t.block_timestamp.tzinfo is not None
+        # datetime.fromtimestamp(1700000000, tz=utc) == 2023-11-14T22:13:20Z
+        assert t.block_timestamp.isoformat() == "2023-11-14T22:13:20+00:00"
+        assert fake.block_timestamp_calls == [0x40]
+
+    @staticmethod
+    def make_rows_blank():
+        from wallets.repository import MemoryWalletRepository
+
+        return MemoryWalletRepository()
 
 
 # --------------------------------------------------------------------------- #
@@ -411,7 +665,7 @@ class TestEndpoints:
     def test_transfers_returns_200(self, client, monkeypatch):
         from blockchain.service import BlockchainService
 
-        async def fake_get(self, address, limit=None):
+        async def fake_get(self, address, limit=None, offset=None, direction=None, refresh=False):
             # Mirror the real service: the address is normalized to lowercase.
             return WalletTransfers(
                 wallet_address=address.lower(),
@@ -432,17 +686,41 @@ class TestEndpoints:
     def test_provider_error_returns_502(self, client, monkeypatch):
         from blockchain.service import BlockchainService
 
-        async def fake_get(self, address, limit=None):
+        async def fake_get(self, address, limit=None, offset=None, direction=None, refresh=False):
             raise AlchemyAPIError("provider down")
 
         monkeypatch.setattr(BlockchainService, "get_wallet_transfers", fake_get)
         resp = client.get(f"/api/v1/wallets/{VALID_ADDRESS}/transfers")
         assert resp.status_code == 502
 
+    def test_pagination_and_direction_params_reach_service(self, client, monkeypatch):
+        from blockchain.service import BlockchainService
+
+        captured = {}
+
+        async def fake_get(self, address, limit=None, offset=None, direction=None, refresh=False):
+            captured.update(limit=limit, offset=offset, direction=direction)
+            return WalletTransfers(
+                wallet_address=address.lower(),
+                chain="eth",
+                transfers=[],
+                pagination=__import__(
+                    "blockchain.models", fromlist=["PaginationInfo"]
+                ).PaginationInfo(max_transfers=1000, fetched=0, truncated=False),
+            )
+
+        monkeypatch.setattr(BlockchainService, "get_wallet_transfers", fake_get)
+        resp = client.get(
+            f"/api/v1/wallets/{VALID_ADDRESS}/transfers",
+            params={"limit": 25, "offset": 50, "direction": "out"},
+        )
+        assert resp.status_code == 200
+        assert captured == {"limit": 25, "offset": 50, "direction": "out"}
+
     def test_unexpected_error_returns_500(self, client, monkeypatch):
         from blockchain.service import BlockchainService
 
-        async def fake_get(self, address, limit=None):
+        async def fake_get(self, address, limit=None, offset=None, direction=None, refresh=False):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(BlockchainService, "get_wallet_transfers", fake_get)

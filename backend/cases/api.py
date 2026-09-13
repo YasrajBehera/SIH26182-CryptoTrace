@@ -22,8 +22,12 @@ from app.audit.service import AuditService, get_audit_service_dep
 from app.auth.deps import require_permission
 from cases.models import (
     ApplyAnalysisRequest,
+    InvestigationContext,
     InvestigationCreate,
     InvestigationListResponse,
+    InvestigationNoteCreate,
+    InvestigationNoteListResponse,
+    InvestigationNoteOut,
     InvestigationOut,
     InvestigationUpdate,
 )
@@ -199,6 +203,68 @@ def delete_case(
 
 
 @router.get(
+    "/{case_id}/notes",
+    response_model=InvestigationNoteListResponse,
+    responses={
+        200: {"description": "Persisted analyst notes for the investigation"},
+        404: {"description": "Investigation not found"},
+        401: {"description": "Authentication required"},
+        403: {"description": "Insufficient permissions"},
+    },
+)
+def list_case_notes(
+    case_id: str = Path(...),
+    service: InvestigationService = Depends(get_investigation_service_dep),
+    audit_service: AuditService = Depends(get_audit_service_dep),
+    current_user: CurrentUser = Depends(require_permission("investigation.read")),
+):
+    try:
+        listing = service.notes(case_id, current_user)
+    except BaseException as exc:
+        raise _to_http(exc)
+    audit_service.record_event(
+        user=current_user.username,
+        action="CASE_NOTE_LIST",
+        resource="investigation",
+        resource_id=case_id,
+        result="listed",
+    )
+    return listing
+
+
+@router.post(
+    "/{case_id}/notes",
+    response_model=InvestigationNoteOut,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"description": "Analyst note persisted"},
+        404: {"description": "Investigation not found"},
+        401: {"description": "Authentication required"},
+        403: {"description": "Insufficient permissions"},
+    },
+)
+def create_case_note(
+    payload: InvestigationNoteCreate,
+    case_id: str = Path(...),
+    service: InvestigationService = Depends(get_investigation_service_dep),
+    audit_service: AuditService = Depends(get_audit_service_dep),
+    current_user: CurrentUser = Depends(require_permission("investigation.update")),
+):
+    try:
+        created = service.add_note(case_id, payload, current_user)
+    except BaseException as exc:
+        raise _to_http(exc)
+    audit_service.record_event(
+        user=current_user.username,
+        action="CASE_NOTE_CREATE",
+        resource="investigation",
+        resource_id=case_id,
+        result="created",
+    )
+    return created
+
+
+@router.get(
     "/{case_id}/risk",
     response_model=RiskAssessment,
     responses={
@@ -218,6 +284,38 @@ def case_risk(
     except BaseException as exc:
         raise _to_http(exc)
     return assessment
+
+
+@router.get(
+    "/{case_id}/context",
+    response_model=InvestigationContext,
+    responses={
+        200: {"description": "Investigation context aggregated"},
+        404: {"description": "Investigation not found"},
+        401: {"description": "Authentication required"},
+        403: {"description": "Insufficient permissions"},
+    },
+)
+def case_context(
+    case_id: str = Path(...),
+    audit_service: AuditService = Depends(get_audit_service_dep),
+    service: InvestigationService = Depends(get_investigation_service_dep),
+    current_user: CurrentUser = Depends(require_permission("investigation.read")),
+):
+    """Aggregate the full investigation context (case, wallet summary, latest
+    analysis, linked evidence, risk, reports) for the current user."""
+    try:
+        context = service.context(case_id, current_user)
+    except BaseException as exc:
+        raise _to_http(exc)
+    audit_service.record_event(
+        user=current_user.username,
+        action="CASE_CONTEXT",
+        resource="investigation",
+        resource_id=case_id,
+        result=context.scope,
+    )
+    return context
 
 
 @router.post(

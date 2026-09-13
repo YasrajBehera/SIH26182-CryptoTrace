@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    alchemy_api_key: str = ""
 
     database_url: str = (
         "postgresql+psycopg://cryptotrace:cryptotrace@localhost:5432/cryptotrace"

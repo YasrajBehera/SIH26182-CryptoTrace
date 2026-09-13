@@ -14,6 +14,7 @@ const ROLE_LABEL: Record<Role, string> = {
 };
 
 const PERMISSION_LABEL: Record<Permission, string> = {
+  "search.read": "Use global search",
   "investigation.read": "View investigations",
   "investigation.create": "Create investigations",
   "investigation.update": "Update investigations",

@@ -22,12 +22,18 @@ function seeded(i: number): number {
   return x - Math.floor(x);
 }
 
-/** Deterministic synthetic transfer set for a given wallet address. */
-export function getDemoTransfers(address: string, limit = 60): WalletTransfers {
-  const seedBase = [...address].reduce((a, c) => a + c.charCodeAt(0), 0);
-  const count = Math.min(limit, 64);
+/** Deterministic synthetic transfer set for a given wallet address.
 
-  const transfers: BlockchainTransfer[] = Array.from({ length: count }, (_, i) => {
+The backing set is fixed at 64 labeled-synthetic rows so pages can be
+requested by `offset`/`limit` exactly like the live backend paginates its held
+set. `direction` filters the backing set (applied before paging), the same way
+the live endpoint restricts its fetch. Always synthetic, never real on-chain.
+*/
+export function getDemoTransfers(address: string, limit = 60, offset = 0, direction?: string): WalletTransfers {
+  const seedBase = [...address].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const total = 64;
+
+  const all: BlockchainTransfer[] = Array.from({ length: total }, (_, i) => {
     const seed = seedBase + i;
     const dir: BlockchainTransfer["direction"] = seeded(seed) > 0.5 ? "in" : "out";
     const asset = ASSETS[Math.floor(seeded(seed + 1) * ASSETS.length)];
@@ -54,16 +60,25 @@ export function getDemoTransfers(address: string, limit = 60): WalletTransfers {
     };
   });
 
-  transfers.sort((a, b) => (a.block_timestamp! > b.block_timestamp! ? 1 : -1));
+  all.sort((a, b) => (a.block_timestamp! > b.block_timestamp! ? 1 : -1));
+
+  const filtered = direction === "in" || direction === "out" ? all.filter((t) => t.direction === direction) : all;
+  const safeOffset = Math.max(0, Math.min(offset, filtered.length));
+  const page = filtered.slice(safeOffset, safeOffset + limit);
 
   return {
     wallet_address: address.toLowerCase(),
     chain: "eth",
-    transfers,
+    transfers: page,
     pagination: {
       max_transfers: limit,
-      fetched: transfers.length,
+      fetched: page.length,
       truncated: false,
+      offset: safeOffset,
+      limit,
+      total: filtered.length,
+      has_next: safeOffset + page.length < filtered.length,
+      has_previous: safeOffset > 0,
     },
   };
 }

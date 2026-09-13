@@ -9,6 +9,7 @@ import {
   ReportIcon,
   RiskIcon,
   SahyogIcon,
+  SearchIcon,
   SettingsIcon,
   ShieldIcon,
   TxIcon,
@@ -32,6 +33,7 @@ interface NavEntry {
 
 const MAIN_NAV: NavEntry[] = [
   { to: "/dashboard", label: "Dashboard", icon: <DashboardIcon />, end: true },
+  { to: "/search", label: "Global Search", icon: <SearchIcon />, permission: "search.read" },
   { to: "/investigations", label: "Investigations", icon: <CasesIcon />, permission: "investigation.read" },
   { to: "/wallets", label: "Investigate Wallet", icon: <WalletIcon />, permission: "wallet.read" },
   { to: "/transactions", label: "Transactions", icon: <TxIcon />, permission: "wallet.read" },

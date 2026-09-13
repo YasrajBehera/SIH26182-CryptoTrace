@@ -59,10 +59,88 @@ export function formatUsd(value?: number | null): string {
   }).format(value);
 }
 
-export function formatDate(value?: string | Date | null): string {
-  if (!value) return "—";
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return String(value);
+/**
+ * Parse a timestamp from any supported on-chain/API shape into a Date.
+ *
+ * Accepts:
+ *  - Unix seconds (10 digit, e.g. 1743477239)
+ *  - Unix milliseconds (13 digit)
+ *  - ISO 8601 strings ("2025-04-01T05:30:00Z")
+ *  - Date instances
+ *
+ * A plain numeric string is treated as unix seconds unless its magnitude
+ * implies milliseconds. Invalid/null values return null (never throw).
+ * There is deliberately no double conversion: callers pass the value out of
+ * Alchemy/db/neo4j exactly once.
+ */
+export function parseTimestamp(value?: string | number | Date | null): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return toDateFromEpoch(value);
+  }
+  const trimmed = value.trim();
+  if (/^-?\d{1,16}(\.\d+)?$/.test(trimmed)) {
+    return toDateFromEpoch(Number(trimmed));
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toDateFromEpoch(n: number): Date | null {
+  // > 1e12 implies epoch milliseconds (e.g. 1.7e12); otherwise unix seconds.
+  const ms = n > 1e12 ? n : n * 1000;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** The display timezone (IANA name, e.g. "Asia/Kolkata"). Always shown. */
+export function localTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+/**
+ * Format a timestamp in the viewer's timezone with the timezone always shown.
+ * Stable, locale-independent output: "01 Apr 2025, 05:30 Asia/Kolkata".
+ */
+export function formatTimestamp(value?: string | number | Date | null): string {
+  const d = parseTimestamp(value);
+  if (!d) return "—";
+  const date = d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const time = d.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return `${date}, ${time} ${localTimeZone()}`;
+}
+
+/**
+ * Honest source label for a displayed timestamp.
+ *  - live: "Blockchain timestamp · Source: Ethereum Mainnet"
+ *  - demo: "Synthetic timestamp · Source: Demo data"
+ * A synthetic value is never labelled as a blockchain timestamp.
+ */
+export function timestampSourceLabel(opts: {
+  demo?: boolean;
+  chain?: string | null;
+}): string {
+  if (opts.demo) return "Synthetic timestamp · Source: Demo data";
+  return `Blockchain timestamp · Source: ${chainLabel(opts.chain)}`;
+}
+
+export function formatDate(value?: string | number | Date | null): string {
+  const d = parseTimestamp(value);
+  if (!d) return "—";
   return d.toLocaleString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -73,10 +151,9 @@ export function formatDate(value?: string | Date | null): string {
   });
 }
 
-export function fromNow(value?: string | Date | null): string {
-  if (!value) return "—";
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(d.getTime())) return String(value);
+export function fromNow(value?: string | number | Date | null): string {
+  const d = parseTimestamp(value);
+  if (!d) return "—";
   const diffMs = Date.now() - d.getTime();
   const mins = Math.round(diffMs / 60000);
   if (mins < 1) return "just now";

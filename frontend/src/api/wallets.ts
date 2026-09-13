@@ -7,13 +7,22 @@ export const wallets = {
   /**
    * Member 1 endpoint: GET /api/v1/wallets/{address}/transfers
    * Falls back to labeled synthetic data when the backend is unreachable.
+   * `offset`/`direction` enable server-side pagination + direction filters.
    */
-  async getTransfers(address: string, limit = 500): Promise<WalletTransfers> {
+  async getTransfers(
+    address: string,
+    limit = 500,
+    opts: { offset?: number; direction?: "in" | "out" } = {},
+  ): Promise<WalletTransfers> {
     if (isDemoMode()) {
-      return getDemoTransfers(address, limit);
+      return getDemoTransfers(address, limit, opts.offset, opts.direction);
     }
     const res = await client.get<WalletTransfers>(`/api/v1/wallets/${encodeURIComponent(address)}/transfers`, {
-      query: { limit },
+      query: {
+        limit,
+        offset: opts.offset ?? 0,
+        ...(opts.direction ? { direction: opts.direction } : {}),
+      },
     });
     return res;
   },

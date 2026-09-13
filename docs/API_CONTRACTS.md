@@ -6,7 +6,15 @@ GET `/api/v1/health`
 ## Wallet transfers (Member 1)
 GET `/api/v1/wallets/{address}/transfers`
 
-Optional query param: `limit` (1-10000).
+Optional query params:
+- `limit` (1-10000): page size.
+- `offset` (>= 0): server-side pagination over the sorted held set.
+- `direction` (`in`|`out`): restrict to one direction.
+
+The response carries a `pagination` object with `total`, `offset`,
+`has_next` and `has_previous` so the UI can page without loading the whole
+set into React. Verified live against `0xfb74767c1ce1aada0a0e114441173b57f8c1571b`:
+`?limit=5&offset=5` returns 5 rows with `total=1000`, `has_next/previous=true`.
 
 Response:
 ```json
@@ -41,26 +49,101 @@ Status codes: `200` success, `400` invalid address, `502` provider/API failure
 or missing API key, `500` unexpected internal error.
 
 ## Investigation
+
+### Cases CRUD
 POST `/api/v1/investigations`
+GET `/api/v1/investigations`
+GET `/api/v1/investigations/{case_id}`
+PATCH `/api/v1/investigations/{case_id}`
+DELETE `/api/v1/investigations/{case_id}`
 
-Request:
+Cases are stored in a repository (in-memory by default, PostgreSQL-backed when
+configured). Reading requires `investigation.read`; mutating requires
+`investigation.update`. All mutations append audit events
+(`CASE_CREATE`, `CASE_UPDATE`, `CASE_DELETE`).
+
+Create request:
 ```json
 {
-  "address": "PUBLIC_WALLET_ADDRESS"
+  "name": "Suspicious deposit trail",
+  "primary_wallet": "0xFB74767C1ce1aadA0a0E114441173b57f8C1571b",
+  "network": "eth"
 }
 ```
 
-Response:
+### Case notes
+GET `/api/v1/investigations/{case_id}/notes`
+POST `/api/v1/investigations/{case_id}/notes`
+
+Notes are analyst observations persisted with a case and scoped to it (reading a
+case never exposes another case's notes). `GET` requires `investigation.read`,
+`POST` requires `investigation.update`. Audit events: `CASE_NOTE_LIST`,
+`CASE_NOTE_CREATE`.
+
+POST request:
 ```json
 {
-  "wallet": "PUBLIC_WALLET_ADDRESS",
-  "status": "created",
-  "transactions": [],
-  "message": "Use GET /api/v1/wallets/{address}/transfers for blockchain ingestion."
+  "body": "Trail observed: 12-hop sweep into mixer contract.",
+  "author": "Admin"
 }
 ```
 
-These contracts will evolve as modules are implemented. Avoid changing shared contracts without discussing the change with the team.
+POST response (201):
+```json
+{
+  "id": "note-0fa1c2b3",
+  "case_id": "CT-2026-0142",
+  "author": "Admin",
+  "body": "Trail observed: 12-hop sweep into mixer contract.",
+  "created_at": "2026-09-13T09:00:00Z"
+}
+```
+
+GET response:
+```json
+{
+  "case_id": "CT-2026-0142",
+  "total": 2,
+  "notes": [ { "id": "note-0fa1c2b3", "case_id": "CT-2026-0142", "author": "Admin", "body": "…", "created_at": "…" } ]
+}
+```
+
+### Investigator Assistant (rule-based)
+GET `/api/v1/assistant/quick-actions`
+POST `/api/v1/assistant/query`
+
+A deterministic, evidence-grounded assistant (no LLM). The router requires
+`investigation.read`; every query is audited (`ASSISTANT_QUERY`). All responses
+carry `human_review_required: true` and derive `data_source` (`live`/`synthetic`)
+from the underlying evidence — never assumed. Referrals are draft-only with
+`submission_state: "requires_sahyog_connection"`.
+
+Quick actions request example:
+```json
+{ "case_id": "CT-2026-0142" }
+```
+
+Query request:
+```json
+{
+  "case_id": "CT-2026-0142",
+  "scope": "case",
+  "intent": "summary",
+  "text": "Summarize the risk in this case"
+}
+```
+
+Query response (abridged):
+```json
+{
+  "case_id": "CT-2026-0142",
+  "intent": "summary",
+  "human_review_required": true,
+  "data_source": "mixed",
+  "sections": [ { "heading": "Overview", "content": "…", "kind": "paragraph" } ],
+  "referral": null
+}
+```
 
 ## Graph engine (`/api/v1/graph`)
 
@@ -119,9 +202,24 @@ Response:
   "max_depth": 3,
   "nodes": [
     {"wallet_id": "eth:0xbbb", "address": "0xbbb", "chain": "eth", "depth": 1}
+  ],
+  "edges": [
+    {
+      "source": "eth:0xaaa",
+      "target": "eth:0xbbb",
+      "tx_id": "eth:0xabc",
+      "tx_hash": "0xabc",
+      "chain": "eth",
+      "amount": "1000000000000000000",
+      "timestamp": 1700001234,
+      "block_number": 20698121
+    }
   ]
 }
 ```
+
+Each edge carries the recorded on-chain `block_number` of the transfer when the
+graph engine has it; otherwise the field is `null`.
 
 ### DFS
 GET `/api/v1/graph/wallets/{wallet_id}/dfs?depth=6&max_nodes=100`

@@ -48,6 +48,7 @@ def wallet_neighbors(
     wallet_id: str = Path(..., pattern=_WALLET_PATTERN),
     depth: int = Query(1, ge=1, le=6),
     max_nodes: int = Query(100, ge=1, le=1000),
+    max_edges: int = Query(500, ge=1, le=5000),
     driver: Driver = Depends(get_driver),
 ):
     nodes = service.neighbors(
@@ -56,6 +57,12 @@ def wallet_neighbors(
         depth=depth,
         max_nodes=max_nodes,
     )
+    edges = service.bfs_edges(
+        driver,
+        wallet_id,
+        max_depth=depth,
+        max_edges=max_edges,
+    )
 
     return schemas.BFSResponse(
         wallet_id=wallet_id,
@@ -64,7 +71,10 @@ def wallet_neighbors(
             schemas.Neighbor(**node)
             for node in nodes
         ],
-        edges=[],
+        edges=[
+            schemas.GraphEdge(**edge)
+            for edge in edges
+        ],
     )
 
 @router.get("/wallets/{wallet_id}/bfs", response_model=schemas.BFSResponse)
@@ -72,6 +82,7 @@ def wallet_bfs(
     wallet_id: str = Path(..., pattern=_WALLET_PATTERN),
     depth: int = Query(3, ge=1, le=6),
     max_nodes: int = Query(100, ge=1, le=1000),
+    max_edges: int = Query(500, ge=1, le=5000),
     driver: Driver = Depends(get_driver),
 ):
     nodes = service.bfs(
@@ -80,6 +91,12 @@ def wallet_bfs(
         max_depth=depth,
         max_nodes=max_nodes,
     )
+    edges = service.bfs_edges(
+        driver,
+        wallet_id,
+        max_depth=depth,
+        max_edges=max_edges,
+    )
 
     return schemas.BFSResponse(
         wallet_id=wallet_id,
@@ -88,7 +105,10 @@ def wallet_bfs(
             schemas.Neighbor(**node)
             for node in nodes
         ],
-        edges=[],
+        edges=[
+            schemas.GraphEdge(**edge)
+            for edge in edges
+        ],
     )
 
 @router.get("/wallets/{wallet_id}/dfs", response_model=schemas.DFSResponse)

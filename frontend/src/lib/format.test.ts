@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shortenAddress, shortenHash, formatAmount, formatNumber, formatUsd, formatDate, chainLabel, fromNow } from "@/lib/format";
+import { shortenAddress, shortenHash, formatAmount, formatNumber, formatUsd, formatDate, chainLabel, fromNow, parseTimestamp, formatTimestamp, timestampSourceLabel, localTimeZone } from "@/lib/format";
 
 describe("format utils", () => {
   it("shortenAddress keeps short strings intact", () => {
@@ -46,8 +46,46 @@ describe("format utils", () => {
 
   it("formatDate/fromNow tolerate bad input", () => {
     expect(formatDate(null)).toBe("—");
-    expect(formatDate("not-a-date")).toBe("not-a-date");
+    expect(formatDate(undefined)).toBe("—");
+    expect(formatDate("not-a-date")).toBe("—");
     expect(fromNow(null)).toBe("—");
     expect(fromNow(new Date())).toBe("just now");
+  });
+
+it("parseTimestamp handles unix seconds, milliseconds and ISO without double conversion", () => {
+    // 2025-04-01T03:13:59Z as unix seconds (1743477239)
+    expect(parseTimestamp(1743477239)?.getTime()).toBe(1743477239 * 1000);
+    // milliseconds form — must NOT be treated as seconds
+    expect(parseTimestamp(1743477239000)?.getTime()).toBe(1743477239000);
+    // numeric string seconds
+    expect(parseTimestamp("1743477239")?.getTime()).toBe(1743477239 * 1000);
+    // ISO string
+    expect(parseTimestamp("2025-04-01T03:13:59Z")?.getTime()).toBe(1743477239 * 1000);
+    // Date passthrough
+    const d = new Date(1743477239000);
+    expect(parseTimestamp(d)).toBe(d);
+    // null / invalid / empty / garbage
+    expect(parseTimestamp(null)).toBe(null);
+    expect(parseTimestamp(undefined)).toBe(null);
+    expect(parseTimestamp("")).toBe(null);
+    expect(parseTimestamp("garbage")).toBe(null);
+    expect(parseTimestamp(Number.NaN)).toBe(null);
+    expect(parseTimestamp(Number.POSITIVE_INFINITY)).toBe(null);
+  });
+
+  it("formatTimestamp always shows the timezone and stays deterministic", () => {
+    const out = formatTimestamp(1743477239);
+    expect(out).toContain("01 Apr 2025");
+    expect(out).toContain(localTimeZone());
+    expect(formatTimestamp(null)).toBe("—");
+    expect(formatTimestamp("bad")).toBe("—");
+  });
+
+  it("timestampSourceLabel never calls synthetic timestamps blockchain", () => {
+    expect(timestampSourceLabel({ demo: false, chain: "eth" })).toBe("Blockchain timestamp · Source: Ethereum");
+    expect(timestampSourceLabel({ demo: false, chain: "eth-mainnet" })).toBe("Blockchain timestamp · Source: Ethereum Mainnet");
+    expect(timestampSourceLabel({ demo: true })).toBe("Synthetic timestamp · Source: Demo data");
+    expect(timestampSourceLabel({ demo: true, chain: "eth" })).toBe("Synthetic timestamp · Source: Demo data");
+    expect(timestampSourceLabel({ demo: false, chain: null })).toBe("Blockchain timestamp · Source: Unknown network");
   });
 });

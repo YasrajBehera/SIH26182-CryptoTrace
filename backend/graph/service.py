@@ -31,9 +31,13 @@ MERGE (dst:Wallet {wallet_id: $dst_wid})
 SET dst.address = $to_address, dst.chain = $chain
 WITH tx, src, dst
 MERGE (src)-[s:SENT {tx_id: $tx_id}]->(tx)
-SET s.amount = $value, s.timestamp = $block_timestamp, s.chain = $chain
+SET s.amount = $value,
+    s.amount_value = coalesce(toFloat($value), 0.0),
+    s.timestamp = $block_timestamp, s.chain = $chain
 MERGE (tx)-[r:RECEIVED {tx_id: $tx_id}]->(dst)
-SET r.amount = $value, r.timestamp = $block_timestamp, r.chain = $chain
+SET r.amount = $value,
+    r.amount_value = coalesce(toFloat($value), 0.0),
+    r.timestamp = $block_timestamp, r.chain = $chain
 """
 
 # Neo4j 5 forbids bound parameters inside variable-length relationship patterns
@@ -51,6 +55,32 @@ RETURN other.wallet_id AS wallet_id,
        min(length(path)) AS depth
 ORDER BY depth, wallet_id
 LIMIT $max_nodes
+"""
+
+BFS_EDGES_QUERY = """
+MATCH (start:Wallet {{wallet_id: $wallet_id}})
+MATCH path = (start)-[*1..{max_depth}]-(other:Wallet)
+WHERE other <> start
+
+WITH collect(DISTINCT other.wallet_id) AS reachable_wallets
+
+WITH reachable_wallets + [$wallet_id] AS wallets
+
+MATCH (src:Wallet)-[:SENT]->(tx:Transaction)-[:RECEIVED]->(dst:Wallet)
+
+WHERE src.wallet_id IN wallets
+  AND dst.wallet_id IN wallets
+
+RETURN DISTINCT
+       src.wallet_id AS source,
+       dst.wallet_id AS target,
+       tx.tx_id AS tx_id,
+       tx.tx_hash AS tx_hash,
+       tx.chain AS chain,
+       toString(tx.value) AS amount,
+       tx.block_timestamp AS timestamp,
+       tx.block_number AS block_number
+LIMIT $max_edges
 """
 
 
@@ -71,17 +101,27 @@ def _validate_depth(max_depth: int, *, max_allowed: int = MAX_BFS_DEPTH) -> int:
         raise ValueError(f"max_depth must be <= {max_allowed}, got {depth}")
     return depth
 
-DFS_QUERY = """
+# Direct transaction-sharing counterparts. Wallets never connect directly; a
+# transfer is Wallet -[:SENT]-> Transaction <-[:RECEIVED]- Wallet, so a
+# "hop" to a counterpart spans two relationships. This query deliberately
+# avoids `apoc.path.expand` so traversal also works when the APOC plugin is
+# not installed (Neo4j ships without it by default).
+NEIGHBORS_QUERY = """
 MATCH (start:Wallet {wallet_id: $wallet_id})
-CALL apoc.path.expand(start, null, 'Wallet', 1, $max_depth, {limit: $max_nodes, bfs: false})
-YIELD path
-WITH nodes(path) AS path_nodes
-UNWIND path_nodes AS node
-WITH node
-WHERE node:Wallet
-RETURN DISTINCT node.wallet_id AS wallet_id,
-                node.address AS address,
-                node.chain AS chain
+MATCH (start)-[:SENT]->(tx:Transaction)-[:RECEIVED]->(other:Wallet)
+WHERE other <> start
+RETURN other.wallet_id AS wallet_id,
+       other.address AS address,
+       other.chain AS chain,
+       1 AS depth
+UNION
+MATCH (start:Wallet {wallet_id: $wallet_id})
+MATCH (other:Wallet)-[:SENT]->(tx:Transaction)-[:RECEIVED]->(start)
+WHERE other <> start
+RETURN other.wallet_id AS wallet_id,
+       other.address AS address,
+       other.chain AS chain,
+       1 AS depth
 LIMIT $max_nodes
 """
 
@@ -109,7 +149,7 @@ COUNT_TRANSACTIONS = "MATCH (t:Transaction) RETURN count(t) AS count"
 
 TEMPLATE_OUT_FLOW = """
 MATCH (wallet:Wallet {wallet_id: $wallet_id})
-MATCH (wallet)-[s:SENT]->(tx:Transaction)<-[r:RECEIVED]-(counterparty:Wallet)
+MATCH (wallet)-[s:SENT]->(tx:Transaction)-[r:RECEIVED]->(counterparty:Wallet)
 WHERE counterparty.wallet_id <> $wallet_id {where_clause}
 RETURN wallet.wallet_id AS source,
        tx.tx_id AS tx_id,
@@ -123,7 +163,7 @@ LIMIT $max_results
 
 TEMPLATE_IN_FLOW = """
 MATCH (wallet:Wallet {wallet_id: $wallet_id})
-MATCH (counterparty:Wallet)-[s:SENT]->(tx:Transaction)<-[r:RECEIVED]-(wallet)
+MATCH (counterparty:Wallet)-[s:SENT]->(tx:Transaction)-[r:RECEIVED]->(wallet)
 WHERE counterparty.wallet_id <> $wallet_id {where_clause}
 RETURN counterparty.wallet_id AS source,
        tx.tx_id AS tx_id,
@@ -137,10 +177,10 @@ LIMIT $max_results
 
 CLUSTER_QUERY = """
 CALL {procedure}($graph, {{}})
-YIELD nodeId, communityId
-WITH communityId, gds.util.asNode(nodeId) AS node
+YIELD nodeId, {column}
+WITH {column} AS community_id, gds.util.asNode(nodeId) AS node
 WHERE node:Wallet
-RETURN communityId AS community_id,
+RETURN community_id,
        collect({{wallet_id: node.wallet_id, address: node.address, chain: node.chain}}) AS wallets
 """
 
@@ -148,6 +188,12 @@ CLUSTER_PROCEDURES = {
     "wcc": "gds.wcc.stream",
     "louvain": "gds.louvain.stream",
     "leiden": "gds.leiden.stream",
+}
+
+CLUSTER_COLUMNS = {
+    "wcc": "componentId",
+    "louvain": "communityId",
+    "leiden": "communityId",
 }
 
 
@@ -194,6 +240,46 @@ def sync_from_postgres(
     return {"synced": synced}
 
 
+def merge_transactions(
+    driver: Driver,
+    transactions: Iterable[Dict],
+) -> int:
+    """MERGE an in-memory batch of transfers (durable wallet-store shape) into
+    the graph, so freshly ingested live data is immediately traversable without
+    a full Postgres re-sync.
+
+    Each row is expected to carry ``chain``, ``tx_hash``, ``block_number``,
+    ``block_timestamp`` (int or None), ``from_address``, ``to_address`` and
+    ``value`` — the same shape ``WalletsRepository.register_analysis`` persists.
+    Returns the number of transactions written.
+    """
+    synced = 0
+    with neo4j_session(driver) as graph:
+        for tx in transactions:
+            chain = (tx.get("chain") or "eth").lower()
+            block_number = tx.get("block_number")
+            block_timestamp = tx.get("block_timestamp") or 0
+            try:
+                block_timestamp = int(block_timestamp)
+            except (TypeError, ValueError):
+                block_timestamp = int(block_timestamp.timestamp()) if block_timestamp else 0
+            params = {
+                "tx_id": transaction_key(chain, tx["tx_hash"]),
+                "tx_hash": tx["tx_hash"],
+                "chain": chain,
+                "block_number": block_number,
+                "block_timestamp": block_timestamp,
+                "value": str(tx["value"]),
+                "src_wid": address_key(chain, tx["from_address"]),
+                "dst_wid": address_key(chain, tx["to_address"]),
+                "from_address": tx["from_address"],
+                "to_address": tx["to_address"],
+            }
+            graph.run(MERGE_TRANSACTION, **params)
+            synced += 1
+    return synced
+
+
 def build_graph(
     driver: Driver,
     db_session_factory: Callable = SessionLocal,
@@ -220,15 +306,37 @@ def bfs(
     max_depth: int = 3,
     max_nodes: int = 100,
 ) -> List[Dict]:
-    query = BFS_QUERY_TEMPLATE.format(max_depth=_validate_depth(max_depth))
+    query = BFS_QUERY_TEMPLATE.format(
+        max_depth=_validate_depth(max_depth)
+    )
+
     with neo4j_session(driver) as session:
         records = session.run(
             query,
             wallet_id=normalize_wallet_id(wallet_id),
             max_nodes=int(max_nodes),
         )
+
         return [dict(record) for record in records]
 
+def bfs_edges(
+    driver: Driver,
+    wallet_id: str,
+    max_depth: int = 3,
+    max_edges: int = 500,
+) -> List[Dict]:
+    query = BFS_EDGES_QUERY.format(
+        max_depth=_validate_depth(max_depth)
+    )
+
+    with neo4j_session(driver) as session:
+        records = session.run(
+            query,
+            wallet_id=normalize_wallet_id(wallet_id),
+            max_edges=int(max_edges),
+        )
+
+        return [dict(record) for record in records]
 
 def neighbors(
     driver: Driver,
@@ -236,7 +344,17 @@ def neighbors(
     depth: int = 1,
     max_nodes: int = 100,
 ) -> List[Dict]:
-    return bfs(driver, wallet_id, max_depth=depth, max_nodes=max_nodes)
+    """Direct transaction-sharing counterparts (one wallet hop either way)."""
+    query = NEIGHBORS_QUERY
+
+    with neo4j_session(driver) as session:
+        records = session.run(
+            query,
+            wallet_id=normalize_wallet_id(wallet_id),
+            max_nodes=int(max_nodes),
+        )
+
+        return [dict(record) for record in records]
 
 
 def bfs_shortest_path(
@@ -316,14 +434,47 @@ def dfs(
     max_depth: int = 6,
     max_nodes: int = 100,
 ) -> List[Dict]:
-    with neo4j_session(driver) as session:
-        records = session.run(
-            DFS_QUERY,
-            wallet_id=normalize_wallet_id(wallet_id),
-            max_depth=int(max_depth),
-            max_nodes=int(max_nodes),
-        )
-        return [dict(record) for record in records]
+    """Depth-first traversal of the wallet neighborhood, no APOC required.
+
+    Wallets connect only through ``Transaction`` nodes, so a neighbor lookup
+    expands the two-relationship SENT/Transaction/RECEIVED pattern
+    (see ``NEIGHBORS_QUERY``). Traversal is an explicit stack in process —
+    bounded by ``max_nodes`` and ``max_depth`` — rather than
+    ``apoc.path.expand``, which is not registered on a stock Neo4j server.
+    """
+    max_depth = _validate_depth(max_depth)
+    max_nodes = max(1, int(max_nodes))
+    root = normalize_wallet_id(wallet_id)
+
+    def _fetch_neighbors(node_id: str) -> List[Dict]:
+        with neo4j_session(driver) as session:
+            records = session.run(
+                NEIGHBORS_QUERY,
+                wallet_id=node_id,
+                max_nodes=max_nodes,
+            )
+            return [dict(record) for record in records]
+
+    def _attrs(node_id: str) -> Dict:
+        chain, _, _maybe = node_id.partition(":")
+        return {"wallet_id": node_id, "address": _maybe, "chain": chain}
+
+    nodes: List[Dict] = []
+    seen = {root}
+    stack = [(root, 0)]
+    while stack and len(nodes) < max_nodes:
+        node_id, depth = stack.pop()
+        nodes.append(_attrs(node_id))
+        if depth >= max_depth:
+            continue
+        for neighbor in _fetch_neighbors(node_id):
+            neighbor_id = neighbor["wallet_id"]
+            if neighbor_id not in seen:
+                seen.add(neighbor_id)
+                stack.append((neighbor_id, depth + 1))
+                if len(nodes) + len(stack) >= max_nodes:
+                    break
+    return nodes
 
 
 def shortest_path(
@@ -351,7 +502,7 @@ def shortest_path(
                 "total_cost": None,
                 "nodes": [],
             }
-        weight_arg = None if weight == "hops" else "amount"
+        weight_arg = None if weight == "hops" else "amount_value"
         record = session.run(
             SHORTEST_PATH_QUERY,
             graph=TX_FLOW_GRAPH,
@@ -425,7 +576,10 @@ def clusters(
         )
     project_cluster_graph(driver)
     with neo4j_session(driver) as session:
-        query = CLUSTER_QUERY.format(procedure=CLUSTER_PROCEDURES[algorithm])
+        query = CLUSTER_QUERY.format(
+            procedure=CLUSTER_PROCEDURES[algorithm],
+            column=CLUSTER_COLUMNS[algorithm],
+        )
         records = session.run(query, graph=CLUSTER_GRAPH)
         communities = [dict(record) for record in records]
 

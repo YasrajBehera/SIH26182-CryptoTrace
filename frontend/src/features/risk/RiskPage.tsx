@@ -150,8 +150,11 @@ export function RiskPage() {
       </Card>
 
       <div className="risk-rule rr-high" role="note">
-        <strong>Advisory only:</strong> risk levels in this release derive from case flags and synthetic wallet
-        summaries. They are not a substitute for a dedicated sanctions/risk scoring engine, which is not connected.
+        <strong>Analytical risk assessment:</strong> the levels shown are risk indicators derived from case flags and
+        wallet activity summaries. They are evidence-backed where wallet summaries or case assessments exist, and they
+        <em> require investigator review before any action</em>. They are not confirmations of criminal activity or
+        wallet ownership, and they are not a substitute for a dedicated sanctions/risk scoring engine, which is not
+        connected.
       </div>
     </div>
   );

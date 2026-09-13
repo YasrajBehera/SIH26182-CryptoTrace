@@ -89,6 +89,7 @@ export const demoCredentials: DemoCredentials[] = [
 /** Permission grid for the DEMO RBAC. Backend must re-enforce these. */
 export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
   admin: [
+    "search.read",
     "investigation.read",
     "investigation.create",
     "investigation.update",
@@ -107,6 +108,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "settings.manage",
   ],
   senior_investigator: [
+    "search.read",
     "investigation.read",
     "investigation.create",
     "investigation.update",
@@ -122,6 +124,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "report.export",
   ],
   investigator: [
+    "search.read",
     "investigation.read",
     "investigation.create",
     "investigation.update",
@@ -136,6 +139,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "report.export",
   ],
   analyst: [
+    "search.read",
     "investigation.read",
     "investigation.update",
     "wallet.read",
@@ -148,6 +152,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "report.create",
   ],
   reviewer: [
+    "search.read",
     "investigation.read",
     "wallet.read",
     "graph.read",
@@ -157,7 +162,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     "report.create",
     "report.export",
   ],
-  read_only: ["investigation.read", "wallet.read", "graph.read", "attribution.read", "evidence.read", "risk.read"],
+  read_only: ["search.read", "investigation.read", "wallet.read", "graph.read", "attribution.read", "evidence.read", "risk.read"],
 };
 
 export function allDemoRoles(): Role[] {

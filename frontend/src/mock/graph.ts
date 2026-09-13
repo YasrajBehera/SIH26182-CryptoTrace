@@ -1,8 +1,9 @@
 import type { GraphEdge, GraphNode, GraphPath } from "@/api/types";
 
 /**
- * SYNTHETIC GRAPH DATA — Member 2's Neo4j engine is not implemented.
- * This demo graph illustrates the frontend integration contract only.
+ * SYNTHETIC GRAPH DATA — demo-mode only. In live mode the frontend uses the
+ * backend graph API (Neo4j) and never falls back to this topology, so the
+ * graph always reflects what the graph engine actually serves.
  */
 
 type NodeSpec = [id: string, address: string, label: string | undefined, type: GraphNode["type"], risk: GraphNode["risk"]];
@@ -19,16 +20,16 @@ const NODES: NodeSpec[] = [
   ["n8", "0x819a0b1c2d3e4f5061728394a5b6c7d8e9f0a1b2", "Unknown Entity", "unknown", "unknown"],
 ];
 
-const EDGES: Array<[string, string, string, string, string, string | null]> = [
-  ["n0", "n1", "0xe1", "USDT", "1250000", "2026-09-02T18:31:00Z"],
-  ["n0", "n2", "0xe2", "USDT", "310000", "2026-09-03T09:12:00Z"],
-  ["n1", "n3", "0xe3", "USDT", "820000", "2026-09-04T22:04:00Z"],
-  ["n3", "n4", "0xe4", "ETH", "12.5", "2026-09-04T22:05:00Z"],
-  ["n4", "n6", "0xe5", "USDC", "430000", "2026-09-05T01:48:00Z"],
-  ["n2", "n5", "0xe6", "ETH", "88", "2026-09-05T14:22:00Z"],
-  ["n5", "n7", "0xe7", "USDC", "290000", "2026-09-06T11:05:00Z"],
-  ["n2", "n8", "0xe8", "DAI", "41000", "2026-09-07T03:33:00Z"],
-  ["n6", "n7", "0xe9", "USDC", "180000", "2026-09-07T19:41:00Z"],
+const EDGES: Array<[string, string, string, string, string, string | null, number | null]> = [
+  ["n0", "n1", "0xe1", "USDT", "1250000", "2026-09-02T18:31:00Z", 22698101],
+  ["n0", "n2", "0xe2", "USDT", "310000", "2026-09-03T09:12:00Z", 22698220],
+  ["n1", "n3", "0xe3", "USDT", "820000", "2026-09-04T22:04:00Z", 22698802],
+  ["n3", "n4", "0xe4", "ETH", "12.5", "2026-09-04T22:05:00Z", 22698803],
+  ["n4", "n6", "0xe5", "USDC", "430000", "2026-09-05T01:48:00Z", 22698890],
+  ["n2", "n5", "0xe6", "ETH", "88", "2026-09-05T14:22:00Z", 22699231],
+  ["n5", "n7", "0xe7", "USDC", "290000", "2026-09-06T11:05:00Z", 22699910],
+  ["n2", "n8", "0xe8", "DAI", "41000", "2026-09-07T03:33:00Z", 22700205],
+  ["n6", "n7", "0xe9", "USDC", "180000", "2026-09-07T19:41:00Z", 22700488],
 ];
 
 function specToNode([id, address, label, type, risk]: NodeSpec): GraphNode {
@@ -38,7 +39,7 @@ function specToNode([id, address, label, type, risk]: NodeSpec): GraphNode {
 export function getDemoGraph(): { nodes: GraphNode[]; edges: GraphEdge[] } {
   return {
     nodes: NODES.map(specToNode),
-    edges: EDGES.map(([source, target, hash, asset, amount, timestamp], i) => ({
+    edges: EDGES.map(([source, target, hash, asset, amount, timestamp, blockNumber], i) => ({
       id: `k${i}`,
       source,
       target,
@@ -46,6 +47,7 @@ export function getDemoGraph(): { nodes: GraphNode[]; edges: GraphEdge[] } {
       asset,
       amount,
       timestamp,
+      blockNumber,
     })),
   };
 }

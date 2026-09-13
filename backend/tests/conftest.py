@@ -39,6 +39,15 @@ def app_client(fake_driver):
     from sahyog.repository import MemorySahyogRepository, make_sahyog_repository
     from wallets.repository import MemoryWalletRepository, make_wallet_repository
 
+    # Keep the suite hermetic: even if a test's analyze call happens to reach
+    # the live blockchain provider, the shared pipeline singleton must never
+    # write to a real Neo4j instance.
+    import pipeline.api as _pipeline_api
+    from pipeline.service import InvestigationPipeline as _InvestigationPipeline
+
+    _prev_pipeline = _pipeline_api._pipeline
+    _pipeline_api._pipeline = _InvestigationPipeline(sync_to_neo4j=False)
+
     repo = MemoryUserRepository()
     for spec in DEMO_USERS:
         repo.create_user(
@@ -69,8 +78,15 @@ def app_client(fake_driver):
     app.dependency_overrides[make_risk_repository] = lambda: risk_repo
     app.dependency_overrides[make_sahyog_repository] = lambda: sahyog_repo
     client = TestClient(app)
+    # Expose the injected in-memory repositories so API tests can seed state
+    # through the same stores the endpoints read (drop-in for search/context).
+    client._test_cases_repo = cases_repo
+    client._test_wallets_repo = wallets_repo
+    client._test_risk_repo = risk_repo
+    client._test_sahyog_repo = sahyog_repo
     _clear_rate_limits(client)
     yield client
+    _pipeline_api._pipeline = _prev_pipeline
     app.dependency_overrides.clear()
 
 
@@ -225,6 +241,17 @@ class FakeSession:
         self.bfs_records = [
             {"wallet_id": "eth:0xbb", "address": "0xbb", "chain": "eth", "depth": 1}
         ]
+        self.bfs_edge_records = [
+            {
+                "source": "eth:0xaa",
+                "target": "eth:0xbb",
+                "tx_id": "eth:0xabc",
+                "tx_hash": "0xabc",
+                "chain": "eth",
+                "amount": "100",
+                "timestamp": 1704067200,
+            }
+        ]
         self.dfs_records = [
             {"wallet_id": "eth:0xbb", "address": "0xbb", "chain": "eth"}
         ]
@@ -281,8 +308,10 @@ class FakeSession:
             return FakeResult([FakeRecord(self.path_record)])
         if "min(length(path))" in q:
             return FakeResult([FakeRecord(row) for row in self.bfs_records])
-        if "apoc.path.expand" in q:
-            return FakeResult([FakeRecord(row) for row in self.dfs_records])
+        if "-[:received]->(other:wallet)" in q:
+            return FakeResult([FakeRecord(row) for row in self.bfs_records])
+        if "src.wallet_id as source" in q:
+            return FakeResult([FakeRecord(row) for row in self.bfs_edge_records])
         if "gds.wcc.stream" in q:
             return FakeResult([FakeRecord(row) for row in self.cluster_records])
         if "gds.louvain.stream" in q:

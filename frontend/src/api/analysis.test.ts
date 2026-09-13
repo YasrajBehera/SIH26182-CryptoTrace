@@ -53,9 +53,10 @@ const evidence = (overrides: Partial<BackendEvidenceRecord> = {}): BackendEviden
   ...overrides,
 });
 
-const rawResult = (): BackendInvestigationResult => ({
+const rawResult = (dataSource: "live" | "demo" = "live"): BackendInvestigationResult => ({
   address: "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   chain: "eth",
+  data_source: dataSource,
   transfers_ingested: 30,
   graph_nodes: 9,
   graph_edges: 9,
@@ -188,24 +189,38 @@ describe("analysis mappers (pure, no network)", () => {
     expect(mapped.intelligence?.isKnownVasp).toBe(true);
   });
 
-  it("flags synthetic transactions honestly", () => {
-    const syntheticOnly = mapInvestigationResult(
-      rawResult(),
+  it("flags synthetic transactions from the pipeline data_source only", () => {
+    // data_source is the single source of truth for live vs synthetic — an
+    // absent/missing evidence payload never turns real chain data synthetic.
+    const demoRun = mapInvestigationResult(
+      rawResult("demo"),
       [evidence({ source: "synthetic" })],
       "0xeeee",
       "eth",
     );
-    expect(syntheticOnly.syntheticTransactions).toBe(true);
+    expect(demoRun.syntheticTransactions).toBe(true);
+    expect(demoRun.dataSource).toBe("demo");
 
-    const mixed = mapInvestigationResult(
-      rawResult(),
-      [evidence({ source: "synthetic" }), evidence({ evidence_id: "ev-real", source: "chain" })],
+    const liveRun = mapInvestigationResult(
+      rawResult("live"),
+      [evidence({ source: "synthetic" })],
       "0xeeee",
       "eth",
     );
-    expect(mixed.syntheticTransactions).toBe(true);
+    expect(liveRun.syntheticTransactions).toBe(false);
+    expect(liveRun.dataSource).toBe("live");
 
-    const real = mapInvestigationResult(rawResult(), [evidence({ source: "chain" })], "0xeeee", "eth");
+    // Even with no evidence records at all, a live pipeline run stays LIVE.
+    const liveNoEvidence = mapInvestigationResult(rawResult("live"), [], "0xeeee", "eth");
+    expect(liveNoEvidence.syntheticTransactions).toBe(false);
+    expect(liveNoEvidence.evidenceCount).toBe(rawResult("live").evidence_count);
+
+    const real = mapInvestigationResult(
+      rawResult("live"),
+      [evidence({ source: "chain" })],
+      "0xeeee",
+      "eth",
+    );
     expect(real.syntheticTransactions).toBe(false);
   });
 });

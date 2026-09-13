@@ -1,14 +1,16 @@
 import type { BlockchainTransfer } from "@/api/types";
 import { Drawer, Address, Badge } from "@/components/ui";
 import { directionBadge } from "./TransferTable";
-import { formatAmount, formatDate, formatNumber } from "@/lib/format";
+import { formatAmount, formatNumber, formatTimestamp, timestampSourceLabel, chainLabel } from "@/lib/format";
 
 export function TransferDrawer({
   transfer,
   onClose,
+  demo,
 }: {
   transfer: BlockchainTransfer | null;
   onClose: () => void;
+  demo?: boolean;
 }) {
   return (
     <Drawer
@@ -30,14 +32,19 @@ export function TransferDrawer({
           <div className="detail-grid">
             <div className="stack">
               <DetailRow label="Transaction hash" value={<code className="mono" style={{ fontSize: 11.5 }}>{transfer.transaction_hash}</code>} monoRight />
-              <DetailRow label="Block timestamp" value={formatDate(transfer.block_timestamp)} />
+              <DetailRow
+                label={demo ? "Synthetic timestamp" : "Blockchain timestamp"}
+                value={formatTimestamp(transfer.block_timestamp)}
+                hint={timestampSourceLabel({ demo, chain: transfer.chain })}
+              />
               <DetailRow label="From" value={<Address address={transfer.from_address} chain={transfer.chain} />} />
               <DetailRow label="To" value={<Address address={transfer.to_address} chain={transfer.chain} />} />
               <DetailRow label="Amount" value={<strong>{formatAmount(transfer.value, transfer.asset)}</strong>} />
             </div>
             <div className="stack">
               <DetailRow label="Direction" value={transfer.direction === "in" ? "Incoming (to wallet)" : "Outgoing (from wallet)"} />
-              <DetailRow label="Network" value={transfer.chain} />
+              <DetailRow label="Network" value={chainLabel(transfer.chain)} />
+              <DetailRow label="Source" value={demo ? "Synthetic demo data" : `Blockchain · ${chainLabel(transfer.chain)}`} />
               {transfer.raw_contract_address ? (
                 <DetailRow label="Token contract" value={<span className="mono" style={{ fontSize: 11.5 }}>{transfer.raw_contract_address}</span>} />
               ) : null}
@@ -84,15 +91,22 @@ export function DetailRow({
   label,
   value,
   monoRight,
+  hint,
 }: {
   label: string;
   value: React.ReactNode;
   monoRight?: boolean;
+  hint?: string;
 }) {
   return (
     <div className="detail-row">
       <span className="detail-label">{label}</span>
-      <span className={`detail-value ${monoRight ? "mono" : ""}`}>{value}</span>
+      <span className={`detail-value ${monoRight ? "mono" : ""}`}>
+        {value}
+        {hint ? (
+          <span style={{ display: "block", fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>{hint}</span>
+        ) : null}
+      </span>
     </div>
   );
 }

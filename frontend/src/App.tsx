@@ -21,6 +21,7 @@ const lazyPage = (loader: () => Promise<{ [key: string]: unknown }>, name: strin
 };
 
 const LoginPage = lazyPage(() => import("@/features/auth/LoginPage"), "LoginPage");
+const SearchPage = lazyPage(() => import("@/features/search/SearchPage"), "SearchPage");
 const DashboardPage = lazyPage(() => import("@/features/dashboard/DashboardPage"), "DashboardPage");
 const CasesPage = lazyPage(() => import("@/features/investigations/CasesPage"), "CasesPage");
 const NewCasePage = lazyPage(() => import("@/features/investigations/NewCasePage"), "NewCasePage");
@@ -82,6 +83,7 @@ export default function App() {
                   <Route element={<AppShell />}>
                     <Route index element={<Navigate to="/dashboard" replace />} />
                     <Route path="dashboard" element={<DashboardPage />} />
+                    <Route path="search" element={<PermissionBoundary permission="search.read"><SearchPage /></PermissionBoundary>} />
                     <Route path="investigations" element={<PermissionBoundary permission="investigation.read"><CasesPage /></PermissionBoundary>} />
                     <Route path="cases/new" element={<PermissionBoundary permission="investigation.create"><NewCasePage /></PermissionBoundary>} />
                     <Route path="cases/:id" element={<PermissionBoundary permission="investigation.read"><CaseDetailPage /></PermissionBoundary>} />

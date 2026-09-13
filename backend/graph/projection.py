@@ -15,16 +15,19 @@ NODE_SPEC: Dict = {
 
 
 def _relationship_spec(orientation: str) -> Dict:
+    # GDS only ingests numeric relationship properties (TEXT amount strings
+    # used for display would abort the projection), so we project the numeric
+    # ``amount_value`` alongside ``timestamp``.
     return {
         SENT_REL: {
             "type": SENT_REL,
             "orientation": orientation,
-            "properties": ["amount", "timestamp"],
+            "properties": ["amount_value", "timestamp"],
         },
         RECEIVED_REL: {
             "type": RECEIVED_REL,
             "orientation": orientation,
-            "properties": ["amount", "timestamp"],
+            "properties": ["amount_value", "timestamp"],
         },
     }
 

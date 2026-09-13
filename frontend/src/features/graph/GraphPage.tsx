@@ -5,12 +5,13 @@ import { GraphCanvas } from "@/components/graph/GraphCanvas";
 import { GraphNodePanel } from "@/components/graph/GraphNodePanel";
 import { FundFlowDiagram } from "@/components/graph/FundFlowDiagram";
 import { useApi } from "@/hooks/useApi";
-import { graph } from "@/api/graph";
-import { getDemoGraph, getDemoPath } from "@/mock";
+import { graph, toWalletId } from "@/api/graph";
+import { getDemoPath } from "@/mock";
 import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
 import type { GraphNode, GraphEdge } from "@/api/types";
 import { validateAddressInput } from "@/lib/address";
+import { formatTimestamp } from "@/lib/format";
 import type { TabItem } from "@/components/ui";
 
 const LEGEND = [
@@ -49,33 +50,65 @@ export function GraphPage() {
   const { data: graphHealth } = useApi(() => graph.health(), [], { enabled: !isDemo });
   const provider = isDemo ? "synthetic" : graphHealth?.provider ?? "checking";
 
-  // A live backend whose Neo4j engine is unreachable still renders topology,
-  // but it is EXPLICITLY synthetic — never presented as live data.
-  const useSynthetic = isDemo || provider === "synthetic";
+  // Synthetic topology is ONLY ever rendered in demo mode. In live mode an
+  // unreachable graph engine is surfaced as an error — never as fake data.
+  const useSynthetic = isDemo;
+  const graphUnavailable = !isDemo && provider === "synthetic";
 
   const { data: graphData, loading, error, reload } = useApi(
-    () =>
-      validAddress && address
-        ? useSynthetic
-          ? Promise.resolve(getDemoGraph())
-          : graph.query({ address, network: "ethereum", depth: Number(depth) || 2, timeRangeDays })
-        : Promise.reject(new Error("Enter a valid wallet address first.")),
-    [address, depth, timeRangeDays, useSynthetic],
+    () => {
+      if (!validAddress || !address) return Promise.reject(new Error("Enter a valid wallet address first."));
+      if (graphUnavailable) {
+        return Promise.reject(
+          new Error("GRAPH ENGINE UNAVAILABLE — the Neo4j graph engine is not reachable. No synthetic topology is shown while the live engine is down. Start the graph service, then retry."),
+        );
+      }
+      return graph.query({ address, network: "ethereum", depth: Number(depth) || 2, timeRangeDays });
+    },
+    [address, depth, timeRangeDays, useSynthetic, graphUnavailable],
     { enabled: validAddress && !!address },
   );
 
-  // Fund-flow destination: explicit `?to=` marks the path end. In synthetic
-  // mode we fall back to a labeled demo target so the flow tab still renders.
+  // Fund-flow destination: explicit `?to=` marks the path end. Otherwise the
+  // strongest counterparty (largest recorded amount) from the live graph is
+  // auto-selected so the flow tab renders without manual URL editing. Demo
+  // mode keeps a labeled demo target.
   const toParam = params.get("to") ?? "";
-  const flowTarget = toParam || (useSynthetic ? `${address.slice(0, 10)}_f` : "");
+  const flowTarget = useMemo(() => {
+    if (toParam) return toParam;
+    if (isDemo) return `${(address ?? "").slice(0, 10)}_f`;
+    if (!graphData || !address) return "";
+    const srcId = toWalletId(address, "ethereum");
+    let best = "";
+    let bestAmount = -1;
+    graphData.edges.forEach((e) => {
+      const amount = Number(e.amount);
+      if (!Number.isFinite(amount)) return;
+      const other = e.source === srcId ? e.target : e.target === srcId ? e.source : "";
+      if (!other || amount <= bestAmount) return;
+      bestAmount = amount;
+      best = other.split(":").pop() ?? other;
+    });
+    return best;
+  }, [toParam, isDemo, graphData, address]);
+
   const { data: flowPath, loading: flowLoading, error: flowError, reload: reloadFlow } = useApi(
-    () =>
-      validAddress && address && flowTarget
-        ? useSynthetic
-          ? Promise.resolve(getDemoPath())
-          : graph.path(address, flowTarget)
-        : Promise.reject(new Error("Add a destination (?to=...) to compute a fund-flow path.")),
-    [address, flowTarget, useSynthetic],
+    () => {
+      if (!validAddress || !address || !flowTarget) {
+        return Promise.reject(
+          graphUnavailable
+            ? new Error("GRAPH ENGINE UNAVAILABLE — the Neo4j graph engine is not reachable, so no fund flow can be computed.")
+            : new Error("Add a destination (?to=...) to compute a fund-flow path."),
+        );
+      }
+      if (graphUnavailable) {
+        return Promise.reject(
+          new Error("GRAPH ENGINE UNAVAILABLE — the Neo4j graph engine is not reachable, so no fund flow can be computed."),
+        );
+      }
+      return useSynthetic ? Promise.resolve(getDemoPath()) : graph.path(address, flowTarget);
+    },
+    [address, flowTarget, useSynthetic, graphUnavailable],
     { enabled: validAddress && !!address && !!flowTarget },
   );
 
@@ -86,7 +119,7 @@ export function GraphPage() {
   ) : provider === "checking" ? (
     <Badge className="status-pending">Probing graph engine…</Badge>
   ) : (
-    <Badge className="status-draft">Synthetic fallback — Neo4j unavailable</Badge>
+    <Badge className="status-draft">Graph engine unavailable</Badge>
   );
 
   const highlighted = useMemo(() => {
@@ -129,7 +162,9 @@ export function GraphPage() {
         subtitle={
           provider === "neo4j"
             ? "Visualize wallet relationships and fund flows against the live Neo4j graph engine."
-            : "Visualize wallet relationships and fund flows. The graph engine is not currently reachable, so synthetic topology is shown (never presented as live data)."
+            : isDemo
+              ? "Demo mode — synthetic graph topology is shown to exercise the interface."
+              : "The graph engine is not currently reachable. No synthetic topology is shown in live mode."
         }
         crumbs={[{ label: "Transaction Graph" }]}
         actions={providerBadge}
@@ -167,7 +202,9 @@ export function GraphPage() {
             <span style={{ color: "var(--text-faint)", fontSize: "var(--text-xs)", alignSelf: "center" }}>
               {provider === "neo4j"
                 ? "Live graph engine queried on build via the backend graph API (Neo4j)."
-                : "Graph engine unreachable — queries are answered with labeled synthetic topology."}
+                : graphUnavailable
+                  ? "Graph engine unreachable — queries are not answered in live mode until Neo4j is back."
+                  : "Probing the graph engine…"}
             </span>
           ) : null}
         </form>
@@ -190,6 +227,15 @@ export function GraphPage() {
               }
               action={address ? <Button onClick={reload}>Retry</Button> : undefined}
             />
+          ) : graphData && graphData.nodes.length === 0 ? (
+            <div className="state" role="status">
+              <p className="state-title">No graph data</p>
+              <p className="state-desc">
+                No transactions are recorded in the graph engine for this wallet yet. Analyze the wallet, then sync
+                the graph (live analyses are mirrored automatically when Neo4j is reachable).
+              </p>
+              {address ? <Button onClick={reload}>Retry</Button> : null}
+            </div>
           ) : (
             <>
               <div className="grid" style={{ gridTemplateColumns: "minmax(0,1fr) 300px", gap: 16 }} data-testid="graph-layout">
@@ -213,6 +259,19 @@ export function GraphPage() {
                         <span className="text-dim">
                           {selectedEdge.source.slice(0, 8)}… → {selectedEdge.target.slice(0, 8)}…
                         </span>
+                        <span className="text-dim" style={{ fontSize: "var(--text-xs)" }}>
+                          Block {selectedEdge.blockNumber ?? "—"}
+                        </span>
+                        {selectedEdge.timestamp ? (
+                          <span className="text-dim" style={{ fontSize: "var(--text-xs)" }}>
+                            {formatTimestamp(selectedEdge.timestamp)} ·{" "}
+                            {useSynthetic ? "Synthetic timestamp · Source: Demo data" : "Blockchain timestamp · Source: Ethereum"}
+                          </span>
+                        ) : (
+                          <span className="text-dim" style={{ fontSize: "var(--text-xs)" }}>
+                            Timestamp unavailable
+                          </span>
+                        )}
                       </div>
                     </Card>
                   ) : null}
@@ -237,7 +296,9 @@ export function GraphPage() {
           subtitle={
             provider === "neo4j"
               ? "Source-to-destination path and transfers reconstructed from the connected graph engine."
-              : "Synthetic path reconstruction. Not computed from live chain data — the graph engine is not connected."
+              : isDemo
+                ? "Synthetic path reconstruction — demo topology, not live chain data."
+                : "Fund flow cannot be computed — the graph engine is not reachable."
           }
         >
           {flowLoading ? (

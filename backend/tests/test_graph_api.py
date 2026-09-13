@@ -70,6 +70,54 @@ def test_bfs_endpoint(app_client):
     assert resp.json()["max_depth"] == 3
 
 
+def test_bfs_endpoint_includes_edges(app_client, fake_session):
+    fake_session.bfs_edge_records = [
+        {
+            "source": "eth:0xaa",
+            "target": "eth:0xbb",
+            "tx_id": "eth:0xedge",
+            "tx_hash": "0xedge",
+            "chain": "eth",
+            "amount": "100",
+            "timestamp": 1704067200,
+            "block_number": 20698121,
+        }
+    ]
+    resp = app_client.get("/api/v1/graph/wallets/eth:0xaa/bfs?depth=3")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["edges"]) == 1
+    assert body["edges"][0] == {
+        "source": "eth:0xaa",
+        "target": "eth:0xbb",
+        "tx_id": "eth:0xedge",
+        "tx_hash": "0xedge",
+        "chain": "eth",
+        "amount": "100",
+        "timestamp": 1704067200,
+        "block_number": 20698121,
+    }
+
+
+def test_neighbors_endpoint_includes_edges(app_client, fake_session):
+    fake_session.bfs_edge_records = [
+        {
+            "source": "eth:0xaa",
+            "target": "eth:0xbb",
+            "tx_id": "eth:0xedge",
+            "tx_hash": "0xedge",
+            "chain": "eth",
+            "amount": "50",
+            "timestamp": 1704067200,
+            "block_number": 20698121,
+        }
+    ]
+    resp = app_client.get("/api/v1/graph/wallets/eth:0xaa/neighbors?depth=1")
+    assert resp.status_code == 200
+    assert len(resp.json()["edges"]) == 1
+    assert resp.json()["edges"][0]["block_number"] == 20698121
+
+
 def test_dfs_endpoint(app_client):
     resp = app_client.get("/api/v1/graph/wallets/eth:0xaa/dfs?depth=4")
     assert resp.status_code == 200
@@ -306,6 +354,30 @@ def test_fund_flow_endpoint(app_client, monkeypatch):
     assert body["transactions"][0]["receiver"] == "eth:0a"
 
 
+def test_fund_flow_endpoint_no_path(app_client, monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "fund_flow_analysis",
+        lambda driver, source, target: {
+            "source": "eth:0xs",
+            "destination": "eth:0xt",
+            "wallet_path": [],
+            "hop_count": None,
+            "transactions": [],
+            "found": False,
+        },
+    )
+    resp = app_client.get(
+        "/api/v1/graph/fund-flow?source=eth:0xs&target=eth:0xt"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["found"] is False
+    assert body["hop_count"] is None
+    assert body["wallet_path"] == []
+    assert body["transactions"] == []
+
+
 def test_clusters_endpoint(app_client):
     resp = app_client.get(
         "/api/v1/graph/clusters?algorithm=louvain&min_community_size=2"
@@ -363,6 +435,29 @@ def test_temporal_path_endpoint(app_client, monkeypatch):
     assert body["found"] is True
     assert len(body["edges"]) == 2
     assert body["edges"][0]["sender"] == "eth:0xs"
+
+
+def test_temporal_path_endpoint_no_path(app_client, monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "temporal_path_analysis",
+        lambda driver, source, target: {
+            "source": "eth:0xs",
+            "destination": "eth:0xt",
+            "path": [],
+            "edges": [],
+            "is_temporally_valid": False,
+            "total_hops": None,
+            "found": False,
+        },
+    )
+    resp = app_client.get("/api/v1/graph/temporal-path?source=eth:0xs&target=eth:0xt")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["found"] is False
+    assert body["total_hops"] is None
+    assert body["path"] == []
+    assert body["edges"] == []
 
 
 def test_bfs_path_endpoint_invalid_source(app_client):

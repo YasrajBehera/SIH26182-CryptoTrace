@@ -6,6 +6,7 @@ from app import models
 from cases.models import (
     ApplyAnalysisRequest,
     InvestigationCreate,
+    InvestigationNoteCreate,
     InvestigationUpdate,
 )
 from cases.repository import MemoryInvestigationRepository
@@ -296,3 +297,98 @@ class TestCasesAPI:
             },
         )
         assert resp.status_code == 409
+
+
+class TestCaseNotes:
+    def test_notes_are_scoped_to_their_case(self):
+        svc = _service()
+        case_a = svc.create(
+            InvestigationCreate(name="Alpha", primary_wallet=ADDR, network="eth"),
+            _user(),
+        )
+        case_b = svc.create(
+            InvestigationCreate(
+                name="Beta", primary_wallet=OTHER_ADDR, network="eth"
+            ),
+            _user(),
+        )
+
+        svc.add_note(
+            case_a.id,
+            InvestigationNoteCreate(body="first observation", author="admin"),
+            _user(),
+        )
+        svc.add_note(
+            case_a.id,
+            InvestigationNoteCreate(body="second observation", author="admin"),
+            _user(),
+        )
+
+        notes_a = svc.notes(case_a.id, _user())
+        notes_b = svc.notes(case_b.id, _user())
+        assert [n.body for n in notes_a.notes] == [
+            "first observation",
+            "second observation",
+        ]
+        assert notes_a.total == 2
+        assert notes_b.total == 0
+        assert all(n.case_id == case_a.id for n in notes_a.notes)
+        assert all(n.id.startswith("note-") for n in notes_a.notes)
+
+    def test_notes_respect_ownership_scoping(self):
+        svc = _service()
+        case = svc.create(
+            InvestigationCreate(name="Alpha", primary_wallet=ADDR, network="eth"),
+            _user(uid=1),
+        )
+        outsider = _user(uid=99, role="investigator", username="investigator")
+        with pytest.raises(CaseNotFoundError):
+            svc.notes(case.id, outsider)
+
+    def test_notes_api_flow(self, app_client):
+        case = app_client.post(
+            "/api/v1/investigations",
+            json={"name": "notes case", "primary_wallet": ADDR},
+        ).json()
+        case_id = case["id"]
+
+        empty = app_client.get(f"/api/v1/investigations/{case_id}/notes")
+        assert empty.status_code == 200
+        assert empty.json()["total"] == 0
+        assert empty.json()["case_id"] == case_id
+
+        created = app_client.post(
+            f"/api/v1/investigations/{case_id}/notes",
+            json={"body": "Trail observed", "author": "admin"},
+        )
+        assert created.status_code == 201
+        note = created.json()
+        assert note["case_id"] == case_id
+        assert note["body"] == "Trail observed"
+        assert note["author"] == "admin"
+        assert note["id"]
+
+        listing = app_client.get(f"/api/v1/investigations/{case_id}/notes")
+        assert listing.status_code == 200
+        assert listing.json()["total"] == 1
+        assert listing.json()["notes"][0]["body"] == "Trail observed"
+
+    def test_notes_api_rejects_unknown_case(self, app_client):
+        resp = app_client.get("/api/v1/investigations/case-missing/notes")
+        assert resp.status_code == 404
+        resp = app_client.post(
+            "/api/v1/investigations/case-missing/notes",
+            json={"body": "x", "author": "admin"},
+        )
+        assert resp.status_code == 404
+
+    def test_notes_api_rejects_empty_body(self, app_client):
+        case = app_client.post(
+            "/api/v1/investigations",
+            json={"name": "notes case", "primary_wallet": ADDR},
+        ).json()
+        resp = app_client.post(
+            f"/api/v1/investigations/{case['id']}/notes",
+            json={"body": "", "author": "admin"},
+        )
+        assert resp.status_code in {400, 422}

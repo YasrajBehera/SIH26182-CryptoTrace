@@ -12,6 +12,7 @@ import { TransferDrawer } from "@/components/transfers/TransferDrawer";
 import type { BlockchainTransfer } from "@/api/types";
 import { formatAmount } from "@/lib/format";
 import { validateAddressInput } from "@/lib/address";
+import { InvestigatorAssistant } from "@/features/assistant/InvestigatorAssistant";
 
 export function WalletDetailPage() {
   const { address: rawAddress } = useParams<{ address: string }>();
@@ -30,21 +31,32 @@ export function WalletDetailPage() {
     }
   };
 
-  const { data: summary, loading: summaryLoading } = useApi<WalletSummary | null>(() => wallets.getSummary(address), [address]);
-  const { data: walletData, loading, error, reload } = useApi(
-    () => wallets.getTransfers(address, 500),
-    [address],
-  );
-
-  const [selected, setSelected] = useState<BlockchainTransfer | null>(null);
-
-  // Filters
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 25;
+  // Filters (direction is applied server-side so it stays consistent with the
+  // persisted page offset; the other filters are local to the loaded page).
   const [q, setQ] = useState("");
   const [direction, setDirection] = useState("all");
   const [asset, setAsset] = useState("all");
   const [minAmount, setMinAmount] = useState("");
 
+  const { data: summary, loading: summaryLoading } = useApi<WalletSummary | null>(() => wallets.getSummary(address), [address]);
+  const { data: walletData, loading, error, reload } = useApi(
+    () =>
+      wallets.getTransfers(address, PAGE_SIZE, {
+        offset: page * PAGE_SIZE,
+        direction: direction === "all" ? undefined : (direction as "in" | "out"),
+      }),
+    [address, page, direction],
+  );
+
+  const [selected, setSelected] = useState<BlockchainTransfer | null>(null);
+
   const transfers = useMemo(() => walletData?.transfers ?? [], [walletData]);
+  const pagination = walletData?.pagination;
+  const total = pagination?.total ?? 0;
+  const source = pagination?.source ?? "provider";
+  const truncated = pagination?.truncated ?? false;
   const assets = useMemo(() => Array.from(new Set(transfers.map((t) => t.asset))).sort(), [transfers]);
 
   const filtered = useMemo(() => {
@@ -173,7 +185,27 @@ export function WalletDetailPage() {
       {/* Transfers */}
       <Card
         title="Transaction history"
-        subtitle={`${filtered.length} of ${transfers.length} transfers shown`}
+        subtitle={
+          <>
+            {typeof total === "number"
+              ? `Page ${page + 1} of ${Math.max(1, Math.ceil(total / PAGE_SIZE))} — ${total} held ${total === 1 ? "transfer" : "transfers"}`
+              : `${filtered.length} of ${transfers.length} transfers shown`}
+            {source === "database" ? (
+              <span className="status-ok" style={{ marginLeft: 8 }} title="Served from the persisted PostgreSQL wallet store — consistent across surfaces.">
+                from DB
+              </span>
+            ) : (
+              <span className="status-warn" style={{ marginLeft: 8 }} title="Fetched fresh from the blockchain provider for this request.">
+                provider-fetched
+              </span>
+            )}
+            {truncated && typeof total === "number" ? (
+              <Badge className="status-warn" title="On-chain history may extend beyond the persisted set for this wallet.">
+                First {total} ingested
+              </Badge>
+            ) : null}
+          </>
+        }
         actions={
           <span className="row" style={{ gap: 6 }}>
             <Button variant="ghost" size="sm" onClick={reload}>↻ Refresh</Button>
@@ -192,7 +224,15 @@ export function WalletDetailPage() {
             onChange={(e) => setQ(e.target.value)}
             aria-label="Filter by transaction hash"
           />
-          <Select value={direction} onChange={(e) => setDirection(e.target.value)} aria-label="Filter by direction" style={{ maxWidth: 150 }}>
+          <Select
+            value={direction}
+            onChange={(e) => {
+              setDirection(e.target.value);
+              setPage(0);
+            }}
+            aria-label="Filter by direction"
+            style={{ maxWidth: 150 }}
+          >
             <option value="all">All directions</option>
             <option value="in">Incoming</option>
             <option value="out">Outgoing</option>
@@ -229,11 +269,43 @@ export function WalletDetailPage() {
         ) : transfers.length === 0 ? (
           <EmptyState title="No transfers found" description="This wallet has no normalized transfers in the current dataset." />
         ) : (
+          <>
           <TransferTable transfers={filtered} demo={isDemo} onRowClick={setSelected} pagination={{ pageSize: 15 }} />
+          {typeof total === "number" ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!pagination?.has_previous}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                ← Previous
+              </Button>
+              <span className="text-dim" style={{ fontSize: "var(--text-sm)" }}>
+                {transfers.length > 0
+                  ? `Rows ${(pagination?.offset ?? 0) + 1}–${(pagination?.offset ?? 0) + transfers.length}`
+                  : "No rows"}
+                {typeof total === "number" ? ` of ${total}` : ""} held transfers
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!pagination?.has_next}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next →
+              </Button>
+            </div>
+          ) : null}
+          </>
         )}
       </Card>
 
-      <TransferDrawer transfer={selected} onClose={() => setSelected(null)} />
+      <TransferDrawer transfer={selected} onClose={() => setSelected(null)} demo={isDemo} />
+
+      {can("investigation.read") ? (
+        <InvestigatorAssistant walletAddress={address} scope="wallet" compact />
+      ) : null}
     </div>
   );
 }

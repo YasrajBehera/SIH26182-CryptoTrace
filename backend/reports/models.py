@@ -105,11 +105,17 @@ def build_section_content(key: str, context: dict) -> str:
             f"{context.get('metadata', {}).get('classification', 'UNCLASSIFIED')}"
         )
     if key == "wallet_overview":
+        txns = case.get("transactions")
+        if txns is None:
+            txns = len(case.get("latest_transactions") or [])
+        candidates_n = case.get("vasp_candidates")
+        if candidates_n is None:
+            candidates_n = len(case.get("latest_candidates") or [])
         return (
             f"Primary wallet: {case.get('primary_wallet') or 'UNAVAILABLE'}\n"
             f"Latest analysis: {case.get('latest_analysis_id') or 'UNAVAILABLE'}\n"
-            f"Transactions persisted: {case.get('transactions', 'UNAVAILABLE')}\n"
-            f"VASP candidates ranked: {case.get('vasp_candidates', 'UNAVAILABLE')}\n"
+            f"Transactions persisted: {txns if txns is not None else 'UNAVAILABLE'}\n"
+            f"VASP candidates ranked: {candidates_n if candidates_n is not None else 'UNAVAILABLE'}\n"
             f"Risk label: {case.get('risk') or 'UNAVAILABLE'}"
         )
     if key == "transaction_analysis":
@@ -187,8 +193,10 @@ def build_section_content(key: str, context: dict) -> str:
     if key == "appendix":
         return (
             "Appendix - Data provenance.\n"
-            "Live blockchain data: Alchemy provider (data_source=live).\n"
-            f"Case data source: {case.get('latest_data_source') or 'UNAVAILABLE'}.\n"
+            "Blockchain provider available to the pipeline: Alchemy "
+            "(getAssetTransfers normalization; reachability depends on the "
+            "deployment environment).\n"
+            "Case data source: " + (case.get('latest_data_source') or 'UNAVAILABLE') + ".\n"
             "Report generated server-side by CryptoTrace (SIH26182)."
         )
     return f"Section {key} is not recognized; content unavailable."

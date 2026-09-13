@@ -10,3 +10,5 @@ export * from "./attribution";
 export * from "./evidence";
 export * from "./users";
 export * from "./sahyog";
+export * from "./search";
+export * from "./assistant";

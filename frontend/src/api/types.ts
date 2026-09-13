@@ -36,6 +36,16 @@ export interface PaginationInfo {
   max_transfers: number;
   fetched: number;
   truncated: boolean;
+  /** Offset into the sorted set held by the backend (server-side pagination). */
+  offset?: number;
+  /** Page size requested (server-side pagination). */
+  limit?: number | null;
+  /** Total normalized transfers held for the wallet. */
+  total?: number;
+  has_next?: boolean;
+  has_previous?: boolean;
+  /** "provider" = fetched fresh from the blockchain provider; "database" = served from persisted PostgreSQL. */
+  source?: "provider" | "database";
 }
 
 export interface WalletTransfers {
@@ -144,6 +154,21 @@ export interface InvestigationNote {
   body: string;
 }
 
+/** Raw backend wire shapes: GET/POST /api/v1/investigations/{id}/notes. */
+export interface BackendInvestigationNote {
+  id: string;
+  case_id: string;
+  author: string;
+  body: string;
+  created_at: string;
+}
+
+export interface BackendInvestigationNoteList {
+  notes: BackendInvestigationNote[];
+  total: number;
+  case_id: string;
+}
+
 export interface InvestigationTimelineEvent {
   id: string;
   at: string;
@@ -217,6 +242,8 @@ export interface GraphEdge {
   asset: string;
   amount: string;
   timestamp: string | null;
+  /** Block number of the recorded transfer; null when the engine did not expose it. */
+  blockNumber: number | null;
   direction?: TransferDirection;
 }
 
@@ -309,6 +336,12 @@ export interface EvidenceItem {
   relatedWallet?: string;
   relatedTransaction?: string;
   relatedCandidate?: string;
+  /** Chain the evidence was recorded against (backend EvidenceRecord.chain). */
+  chain?: string;
+  /** Attribution/analysis id that generated the record. */
+  analysisId?: string;
+  /** Optionalevidence-native unix timestamp, when the record carries one. */
+  timestamp?: number | null;
   reliability: ReliabilityLevel;
   checksum?: string;
   notes?: string;
@@ -437,7 +470,9 @@ export interface InvestigationAnalysis {
   disclaimer: string;
   /** True when the frontend synthesized a demo result (backend unreachable). */
   isDemo: boolean;
-  /** True when the pipeline ran over synthetic transactions (backend default today). */
+  /** The pipeline's explicit data source: "live" (real chain) or "demo" (synthetic). */
+  dataSource: "live" | "demo";
+  /** True when the pipeline ran over synthetic transactions (data_source === "demo"). */
   syntheticTransactions: boolean;
   intelligence: AddressIntelligenceView | null;
   candidates: AttributionCandidate[];
@@ -455,7 +490,9 @@ export type AuditAction =
   | "LOGIN"
   | "LOGOUT"
   | "ANALYZE"
-  | "ATTRIBUTION_REQUEST";
+  | "ATTRIBUTION_REQUEST"
+  | "SEARCH"
+  | "CASE_CONTEXT";
 
 export interface AuditEvent {
   id: string;
@@ -487,7 +524,10 @@ export type ReportSectionKey =
   | "appendix";
 
 export interface ReportMetadata {
-  caseId: string;
+  /** Persisted investigation id the report is scoped to. Null when no case is
+   *  linked — the backend then renders context sections as UNAVAILABLE. The UI
+   *  must not fabricate a synthetic id here (see ReportsPage). */
+  caseId: string | null;
   caseName: string;
   investigator: string;
   generatedAt: string;
@@ -562,6 +602,7 @@ export interface AppUser {
 }
 
 export type Permission =
+  | "search.read"
   | "investigation.read"
   | "investigation.create"
   | "investigation.update"
@@ -578,3 +619,106 @@ export type Permission =
   | "audit.read"
   | "user.manage"
   | "settings.manage";
+
+/* ---- Global Search ---- */
+
+export type SearchEntityType =
+  | "investigation"
+  | "wallet"
+  | "transaction"
+  | "evidence"
+  | "attribution"
+  | "vasp"
+  | "report";
+
+export interface SearchResult {
+  entity_type: SearchEntityType;
+  id: string;
+  title: string;
+  subtitle: string;
+  url: string;
+  source: string;
+  /** Extra per-entity context (risk, confidence, dates, etc). */
+  metadata: Record<string, unknown>;
+}
+
+export interface GlobalSearchResponse {
+  query: string;
+  results: SearchResult[];
+  total: number;
+  source: string;
+}
+
+/* ---- Investigator assistant (M9; backend assistant module) ---- */
+
+export type AssistantDataSource = "live" | "demo" | "mixed" | "unavailable";
+
+export type AssistantIntent =
+  | "summarize_case"
+  | "trace_funds"
+  | "find_vasp"
+  | "explain_attribution"
+  | "suspicious_transactions"
+  | "build_timeline"
+  | "explain_risk"
+  | "generate_report"
+  | "prepare_referral"
+  | "compare_wallets"
+  | "what_changed"
+  | "assist";
+
+export interface AssistantQuickAction {
+  id: string;
+  label: string;
+  description: string;
+  scope: "case" | "wallet";
+  requires_confirmation: boolean;
+}
+
+/** Raw backend wire shape: POST /api/v1/assistant/query. */
+export interface BackendAssistantRequest {
+  query: string;
+  intent?: string | null;
+  case_id?: string | null;
+  wallet_address?: string | null;
+  chain: string;
+  wallet2?: string | null;
+}
+
+export interface AssistantSection {
+  heading: string;
+  body?: string | null;
+  bullets: string[];
+  actions: string[];
+}
+
+export interface ReferralDraft {
+  title: string;
+  case_id: string;
+  primary_wallet: string;
+  chain: string;
+  summary: string;
+  evidence_ids: string[];
+  transaction_hashes: string[];
+  vasp_candidates: string[];
+  risk_level: string;
+  risk_score: number | null;
+  submission_state: "draft_for_review" | "requires_sahyog_connection";
+  sahyog_status: string;
+}
+
+/** Raw backend wire shape: AssistantResponse (assistant module). */
+export interface AssistantResponse {
+  request_id: string;
+  intent: string;
+  title: string;
+  sections: AssistantSection[];
+  evidence_ids: string[];
+  transaction_hashes: string[];
+  warnings: string[];
+  disclaimer: string;
+  data_source: AssistantDataSource;
+  human_review_required: boolean;
+  suggested_actions: AssistantQuickAction[];
+  referral_draft: ReferralDraft | null;
+}

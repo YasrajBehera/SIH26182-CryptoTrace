@@ -6,8 +6,12 @@ from __future__ import annotations
 from typing import List, Optional
 
 from cases.models import (
+    InvestigationContext,
     InvestigationCreate,
     InvestigationListResponse,
+    InvestigationNoteCreate,
+    InvestigationNoteListResponse,
+    InvestigationNoteOut,
     InvestigationOut,
     InvestigationUpdate,
 )
@@ -103,6 +107,16 @@ class InvestigationService:
         case = self._require_case(case_id, user)
         return self._to_out(case)
 
+    def record_for(self, case_id: str, user) -> dict:
+        """Return the raw persisted case record (ownership-scoped).
+
+        Unlike the aggregated ``InvestigationOut``, the raw record also
+        carries the stored ``latest_candidates`` / ``latest_transactions``
+        payloads, which the assistant needs when it grounds answers in the
+        most recent persisted analysis output.
+        """
+        return self._require_case(case_id, user)
+
     def update(
         self, case_id: str, payload: InvestigationUpdate, user
     ) -> InvestigationOut:
@@ -120,6 +134,28 @@ class InvestigationService:
         if not self._can_write(case, user):
             raise CaseAccessError(case_id)
         return self._repo.delete(case_id)
+
+    def notes(self, case_id: str, user) -> InvestigationNoteListResponse:
+        """List persisted analyst notes for a case (ownership-scoped read)."""
+        self._require_case(case_id, user)
+        notes = self._repo.list_notes(case_id)
+        return InvestigationNoteListResponse(
+            notes=[self._to_note_out(n) for n in notes],
+            total=len(notes),
+            case_id=case_id,
+        )
+
+    def add_note(
+        self, case_id: str, payload: InvestigationNoteCreate, user
+    ) -> InvestigationNoteOut:
+        """Persist an analyst note on a case (ownership-scoped write)."""
+        case = self._require_case(case_id, user)
+        if not self._can_write(case, user):
+            raise CaseAccessError(case_id)
+        record = self._repo.add_note(
+            case_id, {"author": payload.author, "body": payload.body}
+        )
+        return self._to_note_out(record)
 
     def apply_analysis(
         self,
@@ -193,6 +229,63 @@ class InvestigationService:
             investigation_id=case_id,
         )
 
+    def attach_report(self, case_id: str, report_id: str, user) -> InvestigationOut:
+        """Record a generated report id on the case (bounded history)."""
+        case = self._require_case(case_id, user)
+        if not self._can_write(case, user):
+            raise CaseAccessError(case_id)
+        history = list(case.get("latest_report_ids") or [])
+        if report_id not in history:
+            history.append(report_id)
+        record = self._repo.update(case_id, {"latest_report_ids": history[-20:]})
+        return self._to_out(record)
+
+    def context(self, case_id: str, user) -> InvestigationContext:
+        """Aggregate the persisted investigation context for an investigator.
+
+        Returns the case, its wallet summary, the latest analysis, linked
+        evidence, the analytical risk, and generated report ids. Every field
+        is real persisted data — nothing is ever fabricated for the context.
+        """
+        case = self._require_case(case_id, user)
+        out = self._to_out(case)
+
+        summary = self._wallet_service.summarize(
+            case.get("primary_wallet", ""), case.get("network", "eth")
+        )
+
+        latest_analysis = None
+        if case.get("latest_analysis_id"):
+            latest_analysis = {
+                "analysis_id": case.get("latest_analysis_id"),
+                "data_source": case.get("latest_data_source") or "demo",
+                "candidate_count": len(case.get("latest_candidates") or []),
+                "transaction_count": len(case.get("latest_transactions") or []),
+            }
+
+        evidence = self._evidence.get_evidence_for_investigation(case_id)
+
+        risk = self._risk_service.get_for_investigation(case_id)
+        if risk is None and (case.get("latest_candidates") or case.get("latest_transactions")):
+            risk = self._risk_service.evaluate(
+                address=case.get("primary_wallet", ""),
+                chain=case.get("network", "eth"),
+                candidates=case.get("latest_candidates") or [],
+                transfers=case.get("latest_transactions") or [],
+                evidence_count=case.get("evidence_count", 0),
+                investigation_id=case_id,
+            )
+
+        return InvestigationContext(
+            case=out,
+            wallet_summary=summary.model_dump() if summary else None,
+            latest_analysis=latest_analysis,
+            evidence=evidence,
+            risk=risk,
+            reports=list(case.get("latest_report_ids") or []),
+            scope="admin" if user.role in _ADMIN_ROLES else "owned",
+        )
+
     def _to_out(self, record: dict) -> InvestigationOut:
         return InvestigationOut(
             id=record["id"],
@@ -209,9 +302,19 @@ class InvestigationService:
             assigned_analyst=record.get("assigned_analyst", "Unassigned"),
             created_by=record.get("created_by", 0),
             latest_analysis_id=record.get("latest_analysis_id"),
+            latest_report_ids=list(record.get("latest_report_ids") or []),
             data_source=record.get("latest_data_source") or "demo",
             created_at=record.get("created_at", ""),
             updated_at=record.get("updated_at", ""),
             tags=list(record.get("tags") or []),
             is_demo=bool(getattr(self._repo, "is_demo", True)),
+        )
+
+    def _to_note_out(self, record: dict) -> InvestigationNoteOut:
+        return InvestigationNoteOut(
+            id=record["id"],
+            case_id=record["case_id"],
+            author=record["author"],
+            body=record["body"],
+            created_at=record["created_at"],
         )

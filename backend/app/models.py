@@ -84,7 +84,7 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(32))
     resource: Mapped[str] = mapped_column(String(64))
     resource_id: Mapped[str] = mapped_column(String(128), default="")
-    result: Mapped[str] = mapped_column(String(16))
+    result: Mapped[str] = mapped_column(String(255))
     ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
 
@@ -108,14 +108,31 @@ class Investigation(Base):
     assigned_analyst: Mapped[str] = mapped_column(String(128), default="Unassigned")
     latest_analysis_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     latest_data_source: Mapped[str] = mapped_column(String(32), default="demo")
+    evidence_count: Mapped[int] = mapped_column(BigInteger, default=0)
     latest_transactions: Mapped[Optional[List]] = mapped_column(JSON, nullable=True)
     latest_candidates: Mapped[Optional[List]] = mapped_column(JSON, nullable=True)
+    latest_report_ids: Mapped[List] = mapped_column(JSON, default=list)
     tags: Mapped[List] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class InvestigationNote(Base):
+    __tablename__ = "investigation_notes"
+    __table_args__ = (
+        Index("ix_investigation_notes_case", "case_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(64))
+    author: Mapped[str] = mapped_column(String(128))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 
