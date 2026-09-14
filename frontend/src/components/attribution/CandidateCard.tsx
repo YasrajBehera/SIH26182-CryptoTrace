@@ -116,7 +116,7 @@ export function CandidateCard({ candidate }: { candidate: AttributionCandidate }
             ))
           ) : (
             <p style={{ color: "var(--text-faint)", fontSize: "var(--text-sm)", margin: 0 }}>
-              No factor breakdown available — requires the Member 3 attribution engine.
+              No factor breakdown is attached to this candidate.
             </p>
           )}
         </div>

@@ -28,7 +28,7 @@ export function WalletExplorerPage() {
         crumbs={[{ label: "Wallet Explorer" }]}
       />
 
-      <Card title="Investigate a wallet" subtitle="Uses the live Member 1 ingestion endpoint when reachable; otherwise labeled demo data.">
+      <Card title="Investigate a wallet" subtitle="Uses the live blockchain ingestion endpoint when reachable; otherwise labeled demo data.">
         <WalletQuickLook />
       </Card>
 

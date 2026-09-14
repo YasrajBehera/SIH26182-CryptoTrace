@@ -41,6 +41,7 @@ def test_system_status_shape_when_authenticated(app_client, monkeypatch, fake_dr
         "vasp",
         "report",
         "sahyog",
+        "sahyog_production",
     }
     assert fields.issubset(body.keys())
     # Values are plain booleans — honest yes/no per component.
@@ -51,6 +52,8 @@ def test_system_status_shape_when_authenticated(app_client, monkeypatch, fake_dr
     # A healthy graph engine surfaces on both the neo4j and graph slots.
     assert body["neo4j"] is True
     assert body["graph"] is True
+    # SAHYOG only reports a production connection when an API is configured.
+    assert body["sahyog_production"] is False
 
 
 def test_system_status_reports_down_graph_honestly(app_client, monkeypatch, fake_driver):

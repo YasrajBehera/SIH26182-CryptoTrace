@@ -194,6 +194,14 @@ class AttributionService:
 
         candidates.sort(key=lambda c: c.score, reverse=True)
 
+        # Only candidates with a real attribution signal are surfaced. A
+        # scored address directory entry always lands above zero, so a genuine
+        # known-address match survives; the bulk of the public directory that
+        # merely shares a chain is noise. When nothing scores, the UNKNOWN
+        # placeholder keeps the contract explicit ("no evidence of this wallet
+        # belonging to a VASP") without fabricating a ranking.
+        candidates = [c for c in candidates if c.score > 0]
+
         if not candidates:
             candidates.append(
                 AttributionCandidate(

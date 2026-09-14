@@ -75,7 +75,7 @@ export function CaseDetailPage() {
             <Button leading={<WalletIcon />} onClick={() => navigate(`/wallets/${encodeURIComponent(investigation.primaryWallet)}`)}>
               Open Wallet
             </Button>
-            <Button leading={<VaspIcon />} onClick={() => navigate(`/vasp?wallet=${encodeURIComponent(investigation.primaryWallet)}`)}>
+            <Button leading={<VaspIcon />} onClick={() => navigate(`/vasp?case=${encodeURIComponent(investigation.id)}&wallet=${encodeURIComponent(investigation.primaryWallet)}`)}>
               Find VASP
             </Button>
             <Button leading={<EvidenceIcon />} onClick={() => navigate(`/evidence?case=${encodeURIComponent(investigation.id)}&wallet=${encodeURIComponent(investigation.primaryWallet)}`)}>
@@ -95,8 +95,14 @@ export function CaseDetailPage() {
         </Card>
         <Card title="Assigned Analyst">{investigation.assignedAnalyst}</Card>
         <Card title="Transactions / VASP / Evidence">
-          <span className="mono">{investigation.transactions} tx</span> ·{" "}
-          <span className="mono">{investigation.vaspCandidates}</span> candidates ·{" "}
+          <span className="mono" title="Transactions captured by the most recent analysis batch">
+            {investigation.transactions} tx (latest analysis)
+          </span>{" "}
+          ·{" "}
+          <span className="mono" title="Unique transactions persisted in the wallet store">
+            {investigation.persistedTransactions != null ? `${investigation.persistedTransactions} persisted` : "—"}
+          </span>{" "}
+          · <span className="mono">{investigation.vaspCandidates}</span> candidates ·{" "}
           <span className="mono">{investigation.evidenceCount}</span> evidence
         </Card>
         <Card title="Dates">

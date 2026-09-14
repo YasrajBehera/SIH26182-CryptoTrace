@@ -59,7 +59,7 @@ export function RiskPage() {
         <Card title="Unknown">
           <div style={{ fontSize: 26, fontWeight: 700 }}>{unanswered.unknown}</div>
           <p style={{ margin: "4px 0 0", fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>
-            no scoring available until the risk engine ships
+            no completed risk assessment attached
           </p>
         </Card>
       </div>
@@ -97,7 +97,7 @@ export function RiskPage() {
         )}
       </Card>
 
-      <Card title="High-risk wallets" subtitle={isDemo ? "Synthetic flagged addresses for interface testing." : "No flagged-address feed is connected — wallet-level scoring requires a backend risk engine."}>
+      <Card title="High-risk wallets" subtitle={isDemo ? "Synthetic flagged addresses for interface testing." : "Wallets with an attached analytical risk assessment. Risk scores are computed by the risk engine when an analysis is run."}>
         <div className="table-toolbar">
           <Select value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Filter risk level" style={{ maxWidth: 160 }}>
             <option value="all">All risk levels</option>
@@ -120,8 +120,8 @@ export function RiskPage() {
           <LoadingBlock />
         ) : visibleWallets.length === 0 ? (
           <EmptyState
-            title={isDemo ? "No flagged wallets" : "Risk engine not connected"}
-            description={isDemo ? "No demo wallets matched the current filter." : "The flagged-address feed is not available. Wallet-level risk scoring requires the backend risk engine to be connected."}
+            title={isDemo ? "No flagged wallets" : "No assessed wallets"}
+            description={isDemo ? "No demo wallets matched the current filter." : "No wallet has a completed risk assessment yet. Run an analysis on a wallet to compute its analytical risk — the risk engine derives scores from transfer volumes, counterparties, attribution candidates, and linked evidence."}
           />
         ) : (
           <table className="data-table" aria-label="High-risk wallets">
@@ -153,8 +153,8 @@ export function RiskPage() {
         <strong>Analytical risk assessment:</strong> the levels shown are risk indicators derived from case flags and
         wallet activity summaries. They are evidence-backed where wallet summaries or case assessments exist, and they
         <em> require investigator review before any action</em>. They are not confirmations of criminal activity or
-        wallet ownership, and they are not a substitute for a dedicated sanctions/risk scoring engine, which is not
-        connected.
+        wallet ownership, and they are not a substitute for a dedicated sanctions-screening or enforcement-decision
+        service.
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import { getDemoGraph, getDemoPath } from "@/mock";
 import type { GraphEdge, GraphNode, GraphPath, GraphQuery } from "./types";
 
 /**
- * Graph frontend contract (Member 2 Neo4j integration).
+ * Graph frontend contract (backend graph API over the Neo4j engine).
  *
  * Live mode calls the backend graph API:
  *   BFS          GET /api/v1/graph/wallets/{id}/bfs

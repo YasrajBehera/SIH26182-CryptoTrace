@@ -40,8 +40,8 @@ export function UsersPage() {
         <PageHeader title="Users" />
         <Card>
           <p style={{ color: "var(--text-muted)" }}>
-            Your role ({role}) does not permit managing users. Authentication and user management are not yet
-            implemented on the backend.
+            Your role ({role}) does not permit managing users. User management is administered server-side; admin
+            access is required to provision or modify accounts.
           </p>
         </Card>
       </div>
@@ -52,7 +52,7 @@ export function UsersPage() {
     <div className="page">
       <PageHeader
         title="Users"
-        subtitle="Directory of analyst accounts. Users are seeded demo records until identity management ships."
+        subtitle="Directory of analyst accounts provisioned by the backend demo seed."
         crumbs={[{ label: "Administration" }, { label: "Users" }]}
         actions={
           <>
@@ -60,7 +60,7 @@ export function UsersPage() {
             <Button
               variant="primary"
               leading={<AddIcon />}
-              onClick={() => push({ kind: "info", title: "User creation (demo)", description: "Identity management is pending; no user was created." })}
+              onClick={() => push({ kind: "info", title: "User creation is not wired in this build", description: "Provision accounts server-side; no user was created." })}
             >
               Add user
             </Button>

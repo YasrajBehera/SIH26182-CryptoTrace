@@ -47,8 +47,8 @@ describe("Investigator dashboard", () => {
     expect(screen.getAllByText("Active Investigations").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("group", { name: /Investigation filters/i })).toBeInTheDocument();
 
-    // Evidence + VASP tables
-    expect(screen.getByText(/VASP Intelligence/i)).toBeInTheDocument();
+    // Evidence + VASP tables (the system-status row and the VASP card both use this copy)
+    expect(screen.getAllByText(/VASP Intelligence/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows honest per-engine status instead of fabricated availability", async () => {

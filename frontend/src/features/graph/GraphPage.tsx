@@ -4,6 +4,7 @@ import { PageHeader, Button, Card, Input, Select, DemoBadge, Badge, Tabs, ErrorS
 import { GraphCanvas } from "@/components/graph/GraphCanvas";
 import { GraphNodePanel } from "@/components/graph/GraphNodePanel";
 import { FundFlowDiagram } from "@/components/graph/FundFlowDiagram";
+import { FocusedGraph } from "@/components/graph/FocusedGraph";
 import { useApi } from "@/hooks/useApi";
 import { graph, toWalletId } from "@/api/graph";
 import { getDemoPath } from "@/mock";
@@ -11,7 +12,7 @@ import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
 import type { GraphNode, GraphEdge } from "@/api/types";
 import { validateAddressInput } from "@/lib/address";
-import { formatTimestamp } from "@/lib/format";
+import { formatTimestamp, shortenAddress } from "@/lib/format";
 import type { TabItem } from "@/components/ui";
 
 const LEGEND = [
@@ -31,7 +32,7 @@ export function GraphPage() {
   const [address, setAddress] = useState(paramsAddress);
   const [depth, setDepth] = useState("2");
   const [timeRange, setTimeRange] = useState("all");
-  const [activeTab, setActiveTab] = useState(params.get("tab") === "flow" ? "flow" : "graph");
+  const [activeTab, setActiveTab] = useState<"graph" | "flow" | "focused">(params.get("tab") === "flow" ? "flow" : params.get("tab") === "focused" ? "focused" : "graph");
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
 
@@ -66,9 +67,21 @@ export function GraphPage() {
       return graph.query({ address, network: "ethereum", depth: Number(depth) || 2, timeRangeDays });
     },
     [address, depth, timeRangeDays, useSynthetic, graphUnavailable],
-    { enabled: validAddress && !!address },
+    { enabled: validAddress && !!address && activeTab !== "focused" },
   );
 
+  // Focused (mini-graph) data is fetched independently at depth 1 so a compact
+  // neighbourhood can be inspected without loading a deeper full graph first.
+  const {
+    data: focusedData,
+    loading: focusedLoading,
+    error: focusedError,
+    reload: reloadFocused,
+  } = useApi(
+    () => graph.query({ address, network: "ethereum", depth: 1, timeRangeDays }),
+    [address, timeRangeDays, useSynthetic, graphUnavailable],
+    { enabled: activeTab === "focused" && validAddress && !!address && !graphUnavailable },
+  );
   // Fund-flow destination: explicit `?to=` marks the path end. Otherwise the
   // strongest counterparty (largest recorded amount) from the live graph is
   // auto-selected so the flow tab renders without manual URL editing. Demo
@@ -139,8 +152,16 @@ export function GraphPage() {
     setParams({ address });
   };
 
+  const focusCenter = useMemo(() => {
+    const data = activeTab === "focused" ? (focusedData ?? graphData) : graphData;
+    if (!data || data.nodes.length === 0) return undefined;
+    const q = (address ?? "").toLowerCase();
+    return data.nodes.find((n) => n.address.toLowerCase() === q);
+  }, [graphData, focusedData, address, activeTab]);
+
   const tabs: TabItem[] = [
     { key: "graph", label: "Graph" },
+    { key: "focused", label: "Focused" },
     { key: "flow", label: "Fund flow" },
   ];
 
@@ -210,9 +231,65 @@ export function GraphPage() {
         </form>
       </Card>
 
-      <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
+      <Tabs tabs={tabs} active={activeTab} onChange={(k) => setActiveTab(k as typeof activeTab)} />
 
-      {activeTab === "graph" ? (
+      {activeTab === "focused" ? (
+        <Card
+          title="Focused view"
+          subtitle={
+            provider === "neo4j"
+              ? "Immediate depth-1 neighbourhood around the subject wallet — the live Neo4j data, rendered as a compact read-only diagram."
+              : isDemo
+                ? "Synthetic depth-1 neighbourhood — demo topology, not live chain data."
+                : "A focused view is not available — the graph engine is not reachable."
+          }
+          actions={
+            address && validAddress ? (
+              <Button variant="ghost" size="sm" onClick={() => setActiveTab("graph")}>
+                Open in full graph →
+              </Button>
+            ) : undefined
+          }
+        >
+          {focusedLoading ? (
+            <div style={{ height: 240 }}>
+              <LoadingBlock />
+            </div>
+          ) : focusedError || !focusedData ? (
+            <ErrorState
+              title="Unable to build graph"
+              description={focusedError ?? "Enter a valid wallet address to view its neighbourhood."}
+              action={address ? <Button onClick={reloadFocused}>Retry</Button> : undefined}
+            />
+          ) : focusedData.nodes.length === 0 ? (
+            <div className="state" role="status">
+              <p className="state-title">No graph data</p>
+              <p className="state-desc">No transactions are recorded in the graph engine for this wallet yet.</p>
+            </div>
+          ) : focusCenter ? (
+            <div className="stack" data-testid="focused-section">
+              <FocusedGraph
+                nodes={focusedData.nodes}
+                edges={focusedData.edges}
+                centerId={focusCenter.id}
+                height={240}
+                onNodeClick={(n) => {
+                  setSelectedNode(n);
+                  setActiveTab("graph");
+                }}
+              />
+              <p className="text-dim" style={{ margin: 0, fontSize: "var(--text-xs)" }}>
+                Center: {shortenAddress(focusCenter.address)} · neighbours shown up to 12 · click a node to open it in the full graph.
+              </p>
+            </div>
+          ) : (
+            <div className="state" role="status">
+              <p className="state-title">No focus node</p>
+              <p className="state-desc">The selected wallet is not present in the returned graph, so no focused view can be drawn.</p>
+            </div>
+          )}
+        </Card>
+      ) : activeTab === "graph" ? (
         <Card title="Relationship graph" subtitle="Click a node for details; click an edge to view the recorded transfer.">
           {loading ? (
             <div style={{ height: 420 }}>
@@ -292,10 +369,10 @@ export function GraphPage() {
         </Card>
       ) : (
         <Card
-          title="Discrete fund flow"
+          title="Fund Flow"
           subtitle={
             provider === "neo4j"
-              ? "Source-to-destination path and transfers reconstructed from the connected graph engine."
+              ? "Reconstructs movement of funds across the live Neo4j transaction graph."
               : isDemo
                 ? "Synthetic path reconstruction — demo topology, not live chain data."
                 : "Fund flow cannot be computed — the graph engine is not reachable."

@@ -249,8 +249,10 @@ export function ReportPreview({
           <h2>Risk Assessment</h2>
           <p>
             Overall risk for this case is assessed at <strong>{data.investigation?.risk ?? "unknown"}</strong>.
-            Risk scoring is currently derived from investigation-level flags. A dedicated risk engine is not
-            connected yet.
+            The risk engine scores wallet activity (transfer volumes, counterparties, attribution candidates, and
+            linked evidence) into a heuristic risk level. Scores are analytical heuristics for triage — NOT
+            determinations of criminality or ownership. The detailed per-factor reasoning for this case is surfaced
+            in the case workspace and via the risk API.
           </p>
         </section>
       ) : null}
@@ -258,7 +260,11 @@ export function ReportPreview({
       {has("analyst_notes") ? (
         <section className="report-section">
           <h2>Analyst Notes</h2>
-          <p>The analyst notes section is reserved for investigator narrative. It is not populated in this demo.</p>
+          <p>
+            Analyst notes are maintained in the case workspace and are persisted with the investigation. Notes
+            attached to this case are exported in the server-side PDF when the case is persisted; otherwise this
+            section is empty.
+          </p>
         </section>
       ) : null}
 

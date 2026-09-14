@@ -24,6 +24,10 @@ from wallets.service import WalletService
 
 _ADMIN_ROLES = {"admin", "senior_investigator"}
 
+# Analyst and reviewer may open any case in read-only, analyst builds
+# evidence on them, reviewer audits them. Writes remain admin/senior only.
+_READ_ALL_ROLES = _ADMIN_ROLES | {"analyst", "reviewer"}
+
 
 class CaseNotFoundError(Exception):
     pass
@@ -55,7 +59,7 @@ class InvestigationService:
         return not getattr(self._repo, "is_demo", True)
 
     def _can_read(self, case: dict, user) -> bool:
-        if user.role in _ADMIN_ROLES:
+        if user.role in _READ_ALL_ROLES:
             return True
         return case.get("created_by") == user.id
 
@@ -94,7 +98,7 @@ class InvestigationService:
         owner_only: bool = True,
     ) -> InvestigationListResponse:
         filters = {"status": status, "q": q}
-        if owner_only and user.role not in _ADMIN_ROLES:
+        if owner_only and user.role not in _READ_ALL_ROLES:
             filters["created_by"] = user.id
         records = self._repo.list(filters)
         return InvestigationListResponse(
@@ -261,6 +265,11 @@ class InvestigationService:
                 "data_source": case.get("latest_data_source") or "demo",
                 "candidate_count": len(case.get("latest_candidates") or []),
                 "transaction_count": len(case.get("latest_transactions") or []),
+                # Persisted candidate payload so report previews and the
+                # assistant can reuse the stored analysis instead of re-running
+                # the full pipeline (which would burn a rate-limit analyze
+                # bucket on every page open).
+                "candidates": case.get("latest_candidates") or [],
             }
 
         evidence = self._evidence.get_evidence_for_investigation(case_id)
@@ -283,10 +292,21 @@ class InvestigationService:
             evidence=evidence,
             risk=risk,
             reports=list(case.get("latest_report_ids") or []),
-            scope="admin" if user.role in _ADMIN_ROLES else "owned",
+            scope="admin" if user.role in _ADMIN_ROLES else ("read_all" if user.role in {"analyst", "reviewer"} else "owned"),
         )
 
     def _to_out(self, record: dict) -> InvestigationOut:
+        # "transactions" = the wallet-level set persisted by the analysis
+        # pipeline (unique rows in the wallet store). "latest_transactions"
+        # is the most-recent ingestion batch, so the reported counts can
+        # legitimately differ on-chain because repeated internal transfers
+        # are de-duplicated in the wallet store.
+        persisted_transactions = 0
+        summary = self._wallet_service.summarize(
+            record.get("primary_wallet", ""), record.get("network", "eth")
+        )
+        if summary is not None:
+            persisted_transactions = summary.transaction_count
         return InvestigationOut(
             id=record["id"],
             name=record["name"],
@@ -297,6 +317,7 @@ class InvestigationService:
             risk=record.get("risk", "unknown"),
             status=record.get("status", "open"),
             transactions=len(record.get("latest_transactions") or []),
+            persisted_transactions=persisted_transactions,
             vasp_candidates=len(record.get("latest_candidates") or []),
             evidence_count=record.get("evidence_count", 0),
             assigned_analyst=record.get("assigned_analyst", "Unassigned"),

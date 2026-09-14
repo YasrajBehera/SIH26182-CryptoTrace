@@ -140,10 +140,14 @@ export function WalletDetailPage() {
             Last activity: {summary?.lastActivity ? new Date(summary.lastActivity).toLocaleDateString() : "—"}
           </p>
         </Card>
-        <Card title="Transactions" subtitle={summaryLoading ? "loading…" : undefined}>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>{transfers.length.toLocaleString()}</div>
+        <Card title={source === "database" ? "Persisted transactions" : "Latest ingestion"} subtitle={summaryLoading ? "loading…" : undefined}>
+          <div style={{ fontSize: 24, fontWeight: 700 }}>
+            {(source === "database" ? total : transfers.length).toLocaleString()}
+          </div>
           <p style={{ margin: "6px 0 0", fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>
-            Normalized transfers returned by ingestion.
+            {source === "database"
+              ? "Held in the persisted investigation store — consistent across surfaces."
+              : "New/returned transfers from the latest blockchain ingestion."}
           </p>
         </Card>
         <Card title="Volume">
@@ -187,9 +191,16 @@ export function WalletDetailPage() {
         title="Transaction history"
         subtitle={
           <>
-            {typeof total === "number"
-              ? `Page ${page + 1} of ${Math.max(1, Math.ceil(total / PAGE_SIZE))} — ${total} held ${total === 1 ? "transfer" : "transfers"}`
-              : `${filtered.length} of ${transfers.length} transfers shown`}
+            <span data-testid="tx-history-label">
+              {source === "database"
+                ? `Persisted investigation history: ${total} held transfers`
+                : transfers.length === 0
+                  ? "Latest ingestion returned no transfers"
+                  : `Latest ingestion: ${transfers.length} new/returned transfers`}
+            </span>
+            {typeof total === "number" && total > 0
+              ? ` — page ${page + 1} of ${Math.max(1, Math.ceil(total / PAGE_SIZE))}`
+              : null}
             {source === "database" ? (
               <span className="status-ok" style={{ marginLeft: 8 }} title="Served from the persisted PostgreSQL wallet store — consistent across surfaces.">
                 from DB

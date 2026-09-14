@@ -17,7 +17,7 @@ interface UseApiResult<T> {
  * Tiny async-data hook. Keeps server/async state separate from UI state.
  * Errors are always user-safe strings (see api/client.ts).
  */
-export function useApi<T>(fn: () => Promise<T>, deps: readonly unknown[] = [], options: UseApiOptions = {}): UseApiResult<T> {
+export function useApi<T>(fn: (signal?: AbortSignal) => Promise<T>, deps: readonly unknown[] = [], options: UseApiOptions = {}): UseApiResult<T> {
   const { enabled = true } = options;
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
@@ -32,9 +32,10 @@ export function useApi<T>(fn: () => Promise<T>, deps: readonly unknown[] = [], o
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fnRef.current().then(
+    fnRef.current(controller.signal).then(
       (result) => {
         if (cancelled) return;
         setData(result);
@@ -50,6 +51,7 @@ export function useApi<T>(fn: () => Promise<T>, deps: readonly unknown[] = [], o
     );
     return () => {
       cancelled = true;
+      controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, nonce, enabled]);

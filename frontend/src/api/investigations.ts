@@ -9,11 +9,13 @@ import {
   getDemoInvestigationAnalysis,
   addDemoInvestigation,
 } from "@/mock";
-import { mapBackendEvidenceToItem, mapInvestigationResult } from "./analysis";
+import { mapBackendEvidenceToItem, mapInvestigationResult, mapBackendCandidateToView } from "./analysis";
 import type {
   ActivityEvent,
+  AttributionCandidate,
   BackendEvidenceRecord,
   BackendInvestigation,
+  BackendInvestigationContext,
   BackendInvestigationCreate,
   BackendInvestigationList,
   BackendInvestigationNote,
@@ -75,6 +77,7 @@ export function mapBackendInvestigationToView(b: BackendInvestigation): Investig
     risk: (b.risk as Investigation["risk"]) || "unknown",
     status: (b.status as Investigation["status"]) || "open",
     transactions: b.transactions ?? 0,
+    persistedTransactions: b.persisted_transactions ?? 0,
     vaspCandidates: b.vasp_candidates ?? 0,
     evidenceCount: b.evidence_count ?? 0,
     assignedAnalyst: b.assigned_analyst || "Unassigned",
@@ -83,6 +86,20 @@ export function mapBackendInvestigationToView(b: BackendInvestigation): Investig
     tags: b.tags ?? [],
     isDemo: b.is_demo,
   };
+}
+
+/**
+ * Map a persisted context's latest-analysis candidates to view models. Used by
+ * report previews so a page open never triggers a fresh full pipeline run.
+ */
+export function mapPersistedCandidatesToView(
+  context: BackendInvestigationContext | null,
+): AttributionCandidate[] {
+  const latest = context?.latest_analysis;
+  if (!latest) return [];
+  return (latest.candidates ?? []).map((c, i) =>
+    mapBackendCandidateToView(c, latest.analysis_id, i),
+  );
 }
 
 /**
@@ -107,6 +124,23 @@ export const investigations = {
     try {
       const res = await client.get<BackendInvestigation>(`/api/v1/investigations/${encodeURIComponent(id)}`);
       return mapBackendInvestigationToView(res);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
+  },
+
+  /**
+   * Load the persisted investigation context (case + wallet summary + latest
+   * analysis + evidence + risk). In demo mode there is no context endpoint,
+   * so this resolves to null and callers fall back to demo adapters.
+   */
+  async context(caseId: string): Promise<BackendInvestigationContext | null> {
+    if (isDemoMode()) return null;
+    try {
+      return await client.get<BackendInvestigationContext>(
+        `/api/v1/investigations/${encodeURIComponent(caseId)}/context`,
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) return null;
       throw err;
@@ -238,7 +272,8 @@ export const investigations = {
   },
 
   async timeline(): Promise<InvestigationTimelineEvent[]> {
-    return demoTimeline;
+    if (isDemoMode()) return demoTimeline;
+    return [];
   },
 };
 

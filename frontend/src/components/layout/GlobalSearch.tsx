@@ -27,26 +27,25 @@ export function GlobalSearch() {
   const [caseList, setCaseList] = useState<Awaited<ReturnType<typeof investigations.list>>>([]);
   const [evidenceList] = useState(() => getDemoEvidence());
   const [vaspNames, setVaspNames] = useState<string[]>([]);
+  const loadedOnce = useRef(false);
 
+  // Lazily fetch the case index and VASP entity names only when the search box
+  // is first opened, instead of on every app mount. This removes two backend
+  // round-trips from the global boot path.
   useEffect(() => {
+    if (!open || loadedOnce.current) return;
+    loadedOnce.current = true;
     let cancelled = false;
     investigations.list().then((c) => {
       if (!cancelled) setCaseList(c);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
     attribution.vaspNames().then((names) => {
       if (!cancelled) setVaspNames(names);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [open]);
 
   // "/" keyboard shortcut focuses search
   useEffect(() => {

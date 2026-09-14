@@ -24,7 +24,7 @@ const RISK_EXPLANATION: Record<RiskLevel, string> = {
   high: "Elevated exposure — prioritize flow tracing.",
   medium: "Moderate exposure — monitor supporting evidence.",
   low: "Limited exposure — routine monitoring.",
-  unknown: "No scoring available until the risk engine ships.",
+  unknown: "No completed risk assessment is attached yet. Run an analysis on this wallet to compute analytical risk.",
 };
 
 const VASP_STATE_LABEL: Record<AttributionState, string> = {
@@ -159,9 +159,9 @@ export function DashboardPage() {
         { label: "API Health probe", detail: "GET /api/v1/health", tone: "warn", state: "Not reachable — demo mode" },
         { label: "Investigation persistence", detail: "PostgreSQL via backend", tone: "warn", state: "Not connected" },
         { label: "Analysis engine (graph)", detail: "Neo4j graph database", tone: "warn", state: "Not available" },
-        { label: "Attribution engine (VASP)", detail: "Curated public VASP directory", tone: "warn", state: "Not available" },
+        { label: "VASP intelligence", detail: "Curated public VASP directory", tone: "warn", state: "Not available" },
         { label: "Report service (PDF)", detail: "Server-side PDF (reportlab)", tone: "warn", state: "Not connected" },
-        { label: "Sahyog intelligence", detail: "Cross-border inquiry repository", tone: "warn", state: "Not available" },
+        { label: "SAHYOG workflow", detail: "Production I4C/NCRP API not configured", tone: "warn", state: "Integration-ready — production API not configured" },
       ];
     }
     if (sysError) {
@@ -174,22 +174,20 @@ export function DashboardPage() {
         { label: "API Health probe", detail: "GET /api/v1/health", tone: "warn", state: "Checking…" },
         { label: "Investigation persistence", detail: "PostgreSQL via backend", tone: "warn", state: "Probing…" },
         { label: "Analysis engine (graph)", detail: "Neo4j graph database", tone: "warn", state: "Probing…" },
-        { label: "Attribution engine (VASP)", detail: "Curated public VASP directory", tone: "warn", state: "Checking…" },
+        { label: "VASP intelligence", detail: "Curated public VASP directory", tone: "warn", state: "Checking…" },
         { label: "Report service (PDF)", detail: "Server-side PDF (reportlab)", tone: "warn", state: "Probing…" },
-        { label: "Sahyog intelligence", detail: "Cross-border inquiry repository", tone: "warn", state: "Checking…" },
+        { label: "SAHYOG workflow", detail: "Production I4C/NCRP API not configured", tone: "warn", state: "Integration-ready — production API not configured" },
       ];
     }
-    const connected = (ok: boolean) => (ok ? "Connected" : "Not connected");
-    const unavailable = (ok: boolean) => (ok ? "Connected" : "Not available");
     return [
-      { label: "Authentication", detail: "Session token verified", tone: "ok", state: "Signed in" },
-      { label: "Blockchain ingestion API", detail: "GET /api/v1/wallets/{address}/transfers", tone: sysStatus.blockchain ? "ok" : "warn", state: sysStatus.blockchain ? "Alchemy configured" : "Not configured" },
+      { label: "Authentication", detail: "Session token verified", tone: "ok", state: "Connected" },
+      { label: "Blockchain ingestion API", detail: "GET /api/v1/wallets/{address}/transfers", tone: sysStatus.blockchain ? "ok" : "warn", state: sysStatus.blockchain ? "Connected — Alchemy" : "Not configured" },
       { label: "API Health probe", detail: "GET /api/v1/health", tone: "ok", state: "Connected" },
-      { label: "Investigation persistence", detail: "PostgreSQL via backend", tone: sysStatus.postgres ? "ok" : "warn", state: connected(sysStatus.postgres) },
-      { label: "Analysis engine (graph)", detail: "Neo4j graph database", tone: sysStatus.graph ? "ok" : "warn", state: unavailable(sysStatus.graph) },
-      { label: "Attribution engine (VASP)", detail: "Curated public VASP directory", tone: sysStatus.vasp ? "ok" : "warn", state: unavailable(sysStatus.vasp) },
-      { label: "Report service (PDF)", detail: "Server-side PDF (reportlab)", tone: sysStatus.report ? "ok" : "warn", state: connected(sysStatus.report) },
-      { label: "Sahyog intelligence", detail: "Cross-border inquiry repository", tone: sysStatus.sahyog ? "ok" : "warn", state: unavailable(sysStatus.sahyog) },
+      { label: "Investigation persistence", detail: "PostgreSQL via backend", tone: sysStatus.postgres ? "ok" : "warn", state: sysStatus.postgres ? "Connected — PostgreSQL" : "Connected — in-memory store (Postgres unavailable)" },
+      { label: "Analysis engine (graph)", detail: "Neo4j graph database", tone: sysStatus.graph ? "ok" : "warn", state: sysStatus.graph ? "Connected — Neo4j" : "Not connected — in-memory graph fallback" },
+      { label: "VASP intelligence", detail: "Curated public VASP directory", tone: sysStatus.vasp ? "ok" : "warn", state: sysStatus.vasp ? "Connected — Curated directory" : "Not available" },
+      { label: "Report service (PDF)", detail: "Server-side PDF (reportlab)", tone: sysStatus.report ? "ok" : "warn", state: sysStatus.report ? "Connected — Server-side PDF" : "Not connected" },
+      { label: "SAHYOG workflow", detail: "Production I4C/NCRP API", tone: sysStatus.sahyog_production ? "ok" : "warn", state: sysStatus.sahyog_production ? "Connected — production SAHYOG API" : "Integration-ready — production API not configured" },
     ];
   }, [demo, sysStatus, sysError]);
 
@@ -249,20 +247,20 @@ export function DashboardPage() {
         <MetricCard
           label="VASP Candidates"
           value={stats.vaspCandidates}
-          desc={demo ? "DEMO — candidate associations only" : "Requires Member 3 engine"}
+          desc={demo ? "DEMO — candidate associations only" : "Candidate associations from the latest analysis"}
           awaiting={!demo && stats.vaspCandidates === 0}
         />
         <MetricCard
           label="High-Risk Wallets"
           value={stats.highRiskWallets}
           risk="high"
-          desc={demo ? "DEMO — demo flag count" : "Requires backend risk engine"}
+          desc={demo ? "DEMO — demo flag count" : "Wallets with an attached high-risk assessment"}
           awaiting={!demo}
         />
         <MetricCard
           label="Evidence Items"
           value={stats.evidenceItems}
-          desc={demo ? "DEMO — synthetic evidence" : "Requires Member 3 engine"}
+          desc={demo ? "DEMO — synthetic evidence" : "Persisted evidence records"}
           awaiting={!demo && stats.evidenceItems === 0}
         />
         <MetricCard
@@ -300,7 +298,7 @@ export function DashboardPage() {
 
         <Card
           title="Risk Intelligence"
-          subtitle={riskTotal ? "Distribution across the filtered investigation set" : "No data — awaiting backend"}
+          subtitle={riskTotal ? "Distribution across the filtered investigation set" : "No completed risk assessment attached"}
         >
           {riskTotal ? (
             <div className="stack">
@@ -322,14 +320,14 @@ export function DashboardPage() {
             </div>
           ) : (
             <div className="text-dim" style={{ fontSize: "var(--text-sm)" }}>
-              Risk classification is not computed until the backend provides investigations with risk levels.
+              No completed risk assessment is attached to the current investigation set. Scores appear only from a persisted assessment — never fabricated.
             </div>
           )}
         </Card>
 
         <Card
           title="Fund Flow Preview"
-          subtitle={demo ? "DEMO — synthetic path, not computed from chain data" : "Requires Member 2 graph engine"}
+          subtitle={demo ? "DEMO — synthetic path, not computed from chain data" : "Reconstructs movement of funds across the live Neo4j transaction graph."}
           actions={
             <Button variant="ghost" size="sm" onClick={() => navigate("/graph?tab=flow")}>
               Open in graph →
@@ -340,8 +338,7 @@ export function DashboardPage() {
             <FundFlowDiagram path={flowPath} demo onNodeClick={(n) => navigate(`/graph?address=${encodeURIComponent(n.address)}`)} />
           ) : (
             <div className="text-dim" style={{ fontSize: "var(--text-sm)" }}>
-              Fund-flow reconstruction becomes available when the Member 2 graph engine ships. No live graph data is
-              shown.
+              No fund-flow path available for this investigation.
             </div>
           )}
         </Card>
@@ -491,7 +488,7 @@ export function DashboardPage() {
             </div>
           ) : (
             <p className="text-dim" style={{ fontSize: "var(--text-sm)" }}>
-              Evidence accumulates once the Member 3 evidence service is connected.
+              No evidence records are attached to the current investigation set yet.
             </p>
           )}
         </Card>
@@ -563,7 +560,7 @@ export function DashboardPage() {
             </div>
           ) : (
             <p className="text-dim" style={{ fontSize: "var(--text-sm)" }}>
-              Candidate associations appear once the Member 3 attribution engine is connected.
+              No VASP candidate associations are attached to the current investigation set yet.
             </p>
           )}
         </Card>

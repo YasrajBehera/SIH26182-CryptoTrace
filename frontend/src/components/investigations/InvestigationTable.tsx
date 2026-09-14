@@ -47,10 +47,28 @@ export const investigationColumns = (): ColumnDef<Investigation>[] => [
   },
   {
     key: "transactions",
-    header: "Tx",
+    header: "Tx (analysis)",
     align: "right",
-    cell: (c) => formatNumber(c.transactions),
+    cell: (c) => (
+      <span title="Transactions captured by the most recent analysis batch">
+        {formatNumber(c.transactions)}
+      </span>
+    ),
     sortValue: (c) => c.transactions,
+  },
+  {
+    key: "persistedTransactions",
+    header: "Persisted",
+    align: "right",
+    cell: (c) =>
+      c.persistedTransactions != null ? (
+        <span title="Unique transactions persisted in the wallet store">
+          {formatNumber(c.persistedTransactions)}
+        </span>
+      ) : (
+        "—"
+      ),
+    sortValue: (c) => c.persistedTransactions ?? -1,
   },
   {
     key: "vasp",

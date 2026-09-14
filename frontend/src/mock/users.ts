@@ -141,6 +141,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
   analyst: [
     "search.read",
     "investigation.read",
+    "investigation.create",
     "investigation.update",
     "wallet.read",
     "wallet.analyze",

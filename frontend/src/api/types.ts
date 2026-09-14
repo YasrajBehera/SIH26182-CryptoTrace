@@ -85,6 +85,9 @@ export interface Investigation {
   risk: RiskLevel;
   status: InvestigationStatus;
   transactions: number;
+  /** Unique transactions persisted in the wallet store (may differ from the
+   *  latest analysis batch due to on-chain de-duplication). */
+  persistedTransactions?: number;
   vaspCandidates: number;
   evidenceCount: number;
   assignedAnalyst: string;
@@ -115,6 +118,7 @@ export interface BackendInvestigation {
   risk: string;
   status: string;
   transactions: number;
+  persisted_transactions: number;
   vasp_candidates: number;
   evidence_count: number;
   assigned_analyst: string;
@@ -217,7 +221,7 @@ export interface WalletSummary {
   isDemo?: boolean;
 }
 
-/* ---- Graph (Member 2 integration contract; demo data today) ---- */
+/* ---- Graph (backend graph API over the Neo4j engine) ---- */
 
 export type GraphNodeType = "wallet" | "contract" | "vasp" | "unknown";
 
@@ -441,6 +445,24 @@ export interface BackendInvestigationResult {
   disclaimer: string;
   case_id?: string | null;
   data_source?: string;
+}
+
+/** GET /api/v1/investigations/{id}/context — persisted investigation context. */
+export interface BackendInvestigationContext {
+  case: BackendInvestigation;
+  wallet_summary: Record<string, unknown> | null;
+  latest_analysis: {
+    analysis_id: string;
+    data_source: string;
+    candidate_count: number;
+    transaction_count: number;
+    /** Persisted candidate payload from the most recent attached analysis. */
+    candidates: BackendAttributionCandidate[];
+  } | null;
+  evidence: BackendEvidenceRecord[];
+  risk: BackendRiskAssessment | null;
+  reports: string[];
+  scope: string;
 }
 
 /* ---- Investigation analysis view model (frontend-facing) ---- */

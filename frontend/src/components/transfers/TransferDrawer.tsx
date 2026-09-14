@@ -63,7 +63,7 @@ export function TransferDrawer({
             </div>
             <div className="detail-row">
               <span className="detail-label">Risk indicators</span>
-              <span className="detail-value">None computed — no risk engine connected ({transfer.chain}).</span>
+              <span className="detail-value">None computed for this transfer — wallet-level analytical risk appears after an analysis attachment ({transfer.chain}).</span>
             </div>
             <div className="detail-row">
               <span className="detail-label">Evidence</span>
@@ -77,7 +77,7 @@ export function TransferDrawer({
 
           <div className="card" style={{ background: "var(--bg-elevated)" }}>
             <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>
-              This record follows the normalized transfer schema from the Member 1 ingestion layer. USD valuation
+              This record follows the normalized transfer schema from the blockchain ingestion layer. USD valuation
               and per-transaction risk require additional backend support.
             </p>
           </div>

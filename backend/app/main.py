@@ -107,11 +107,11 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     RateLimitMiddleware,
     limits={
-        "/api/v1/auth/login": (
+        "/api/v1/auth": (
             _settings.login_rate_limit,
             _settings.login_rate_window_seconds,
         ),
-        "/api/v1/investigations": (
+        "investigations.analyze": (
             _settings.analyze_rate_limit,
             _settings.rate_limit_window_seconds,
         ),
@@ -196,7 +196,7 @@ def system_status(_current_user=Depends(get_current_user)) -> dict:
     - blockchain: an Alchemy provider key is configured
     - neo4j:      the graph database is reachable
     - graph:      mirrors neo4j (the graph engine runs on Neo4j)
-    - vasp:       attribution engine ships with the service
+    - vasp:       attribution engine (curated public directory)
     - report:     the PDF renderer (reportlab) is importable
     - sahyog:     the cross-border inquiry repository is available
     """
@@ -234,6 +234,7 @@ def system_status(_current_user=Depends(get_current_user)) -> dict:
         "vasp": True,
         "report": report_ok,
         "sahyog": True,
+        "sahyog_production": _settings.sahyog_production_api_configured,
     }
 
 

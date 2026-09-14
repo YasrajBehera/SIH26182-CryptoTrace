@@ -1,9 +1,11 @@
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader, Button, Card, DemoBadge, Badge, EmptyState, LoadingBlock, ConfidenceLevelBadge } from "@/components/ui";
 import { CandidateCard } from "@/components/attribution/CandidateCard";
 import { useApi } from "@/hooks/useApi";
 import { attribution } from "@/api/attribution";
 import { evidence } from "@/api/evidence";
+import { investigations, mapPersistedCandidatesToView } from "@/api/investigations";
 import { ProvenanceChain } from "@/components/evidence/EvidenceComponents";
 import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
@@ -15,12 +17,31 @@ export function VaspPage() {
   const [params] = useSearchParams();
   const wallet = params.get("wallet") ?? "";
   const entity = params.get("entity") ?? "";
+  const caseId = params.get("case") ?? "";
   const { isDemo } = useDataSource();
   const { can } = useAuth();
 
-  const { data: candidates, loading, error, reload } = useApi(() => attribution.candidates(wallet || undefined), [wallet]);
+  // When a case is in scope the page shows ONLY the investigation's persisted
+  // candidates (from the case context snapshot) — never a fresh pipeline run
+  // and never a generic directory listing. Without a case it computes fresh
+  // behavioral candidates for the queried wallet.
+  const { data: context, loading: contextLoading, error: contextError, reload: reloadContext } = useApi(
+    () => (caseId ? investigations.context(caseId) : Promise.resolve(null)),
+    [caseId],
+  );
+  const { data: candidates, loading, error, reload } = useApi(
+    () => (caseId ? Promise.resolve(null) : attribution.candidates(wallet || undefined)),
+    [wallet, caseId],
+  );
   const { data: provenance } = useApi(() => evidence.provenance(), [], { enabled: true });
   const { data: directMatch } = useApi(() => (wallet ? attribution.intelligence(wallet) : Promise.resolve(null)), [wallet]);
+
+  // Effective candidate set: persisted case snapshot when investigation-scoped,
+  // otherwise the freshly computed pipeline result.
+  const sourceCandidates = useMemo(() => {
+    if (caseId) return mapPersistedCandidatesToView(context ?? null);
+    return candidates ?? [];
+  }, [caseId, context, candidates]);
 
   if (!can("attribution.read")) {
     return (
@@ -33,15 +54,27 @@ export function VaspPage() {
     );
   }
 
+  const loadingState = caseId ? contextLoading : loading;
+  const errorState = caseId ? contextError : error;
+  const retry = caseId ? reloadContext : reload;
+
   const ranked = (() => {
-    if (!candidates) return [];
-    const sorted = [...candidates].sort(
+    if (!sourceCandidates.length) return [];
+    // The backend returns an explicit UNKNOWN placeholder when nothing scores.
+    // Hide it from the ranking list (it is surfaced as a banner) so the UI
+    // never implies a placement ranks a VASP that was not actually found.
+    const known = sourceCandidates.filter((c) => c.vaspName.toLowerCase() !== "unknown");
+    const sorted = [...known].sort(
       (a, b) => (CONF_RANK[a.confidenceLevel] ?? 3) - (CONF_RANK[b.confidenceLevel] ?? 3),
     );
     if (!entity) return sorted;
     const q = entity.toLowerCase();
     return sorted.filter((c) => c.vaspName.toLowerCase().includes(q));
   })();
+
+  const hasUnknownPlaceholder = sourceCandidates.some((c) => c.vaspName.toLowerCase() === "unknown");
+  const highestScore = ranked.reduce((max, c) => Math.max(max, c.confidenceScore ?? 0), 0);
+  const noHighConfidence = !hasUnknownPlaceholder && wallet && ranked.length > 0 && highestScore < 70;
 
   return (
     <div className="page">
@@ -60,9 +93,23 @@ export function VaspPage() {
         <strong>{isDemo ? "DEMO mode" : "LIVE mode"}:</strong>{" "}
         {isDemo
           ? "Candidates are scored against the demo synthetic VASP directory. All evidence is labeled synthetic."
-          : "Attribution is scored against the curated public VASP address directory. Evidence is derived from real blockchain data."}{" "}
+          : caseId
+            ? "Showing the persisted attribution snapshot for the selected investigation — no fresh analysis is run from this page."
+            : "Attribution is scored against the curated public VASP address directory. Evidence is derived from real blockchain data."}{" "}
         The score is an analytical ranking heuristic. It is NOT proof of wallet ownership or VASP association.
       </div>
+
+      {caseId ? (
+        <Card title="Investigation scope" subtitle="Candidates are the persisted analysis on this investigation — not a generic directory listing.">
+          <span className="mono" data-testid="vasp-case-scope">{caseId}</span>
+          {context?.case ? (
+            <p style={{ margin: "8px 0 0", fontSize: "var(--text-sm)", color: "var(--text-faint)" }}>
+              {context.case.name} · {context.case.risk ?? "Unknown"} risk ·{" "}
+              {sourceCandidates.length} persisted {sourceCandidates.length === 1 ? "candidate" : "candidates"}
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
 
       {wallet ? (
         <Card title="Filtered by wallet" subtitle="Showing candidates for the selected wallet only.">
@@ -101,14 +148,34 @@ export function VaspPage() {
         </Card>
       ) : null}
 
-      {loading ? (
-        <LoadingBlock />
-      ) : error ? (
-        <Card>
-          <p style={{ color: "var(--text-muted)" }}>{error}</p>
-          <Button onClick={reload}>Retry</Button>
+      {!isDemo && wallet && hasUnknownPlaceholder ? (
+        <Card title="No high-confidence VASP attribution found.">
+          <p style={{ margin: 0 }} data-testid="vasp-high-confidence-none">
+            This wallet was analyzed against the curated public VASP directory but no candidate reached a positive
+            attribution score. No high-confidence VASP attribution found. There is currently no evidence that this wallet
+            belongs to any service provider in the directory.
+          </p>
         </Card>
-      ) : !ranked.length ? (
+      ) : null}
+
+      {!isDemo && wallet && noHighConfidence ? (
+        <Card title="No high-confidence VASP attribution found.">
+          <p style={{ margin: 0 }} data-testid="vasp-high-confidence-none">
+            The strongest candidate scores <strong>{highestScore}/100</strong>, below the HIGH confidence threshold
+            (70). No high-confidence VASP attribution found. The candidates below remain behavioral associations only —
+            they are NOT verified ownership.
+          </p>
+        </Card>
+      ) : null}
+
+      {loadingState ? (
+        <LoadingBlock />
+      ) : errorState ? (
+        <Card>
+          <p style={{ color: "var(--text-muted)" }}>{errorState}</p>
+          <Button onClick={retry}>Retry</Button>
+        </Card>
+      ) : !ranked.length && !hasUnknownPlaceholder ? (
         <EmptyState
           title="No candidates"
           description={
@@ -116,6 +183,11 @@ export function VaspPage() {
               ? "The synthetic adapter returned no candidates for this filter. Try removing the wallet/entity filter."
               : "No attribution candidates were returned by the backend pipeline for this filter."
           }
+        />
+      ) : !ranked.length && hasUnknownPlaceholder ? (
+        <EmptyState
+          title="No attribution signal"
+          description="The pipeline analyzed this wallet but every candidate scored zero. No high-confidence VASP attribution found."
         />
       ) : (
         <div className="stack">

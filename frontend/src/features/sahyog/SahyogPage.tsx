@@ -162,12 +162,12 @@ export function SahyogPage() {
         title="SAHYOG Referral Intake"
         subtitle="I4C Sahyog cybercrime-referral flow: victim complaint → suspect-wallet triage → CryptoTrace investigation handoff (DEMO)."
         crumbs={[{ label: "SAHYOG" }]}
-        actions={isDemo ? <DemoBadge label="SYNTHETIC REFERRALS" /> : <Badge className="status-draft">DEMO flow</Badge>}
+        actions={isDemo ? <DemoBadge label="SYNTHETIC REFERRALS" /> : <Badge className="status-open" title="SAHYOG is integration-ready but no authorized I4C/NCRP production API is configured.">Integration-ready</Badge>}
       />
 
       <div className="risk-rule rr-low" role="note">
-        <strong>DEMO INTEGRATION:</strong> No live I4C/NCRP connection is used. Referral intake is
-        simulated end-to-end by the backend SAHYOG module; every record is synthetic and clearly marked.
+        <strong>{isDemo ? "DEMO INTEGRATION" : "INTEGRATION-READY"}:</strong>{" "}
+        {isDemo ? "No live I4C/NCRP connection is used. Referral intake is simulated end-to-end by the backend SAHYOG module; every record is synthetic and clearly marked." : "Authorized production API not configured. No live I4C/NCRP connection is used — the backend SAHYOG module simulates referral intake and every record is synthetic and clearly marked."}
       </div>
 
       {/* Pipeline visualization */}

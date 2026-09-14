@@ -35,6 +35,7 @@ const SahyogPage = lazyPage(() => import("@/features/sahyog/SahyogPage"), "Sahyo
 const EvidencePage = lazyPage(() => import("@/features/evidence/EvidencePage"), "EvidencePage");
 const RiskPage = lazyPage(() => import("@/features/risk/RiskPage"), "RiskPage");
 const ReportsPage = lazyPage(() => import("@/features/reports/ReportsPage"), "ReportsPage");
+const AssistantPage = lazyPage(() => import("@/features/assistant/AssistantPage"), "AssistantPage");
 const AuditPage = lazyPage(() => import("@/features/audit/AuditPage"), "AuditPage");
 const UsersPage = lazyPage(() => import("@/features/admin/UsersPage"), "UsersPage");
 const RolesPage = lazyPage(() => import("@/features/admin/RolesPage"), "RolesPage");
@@ -96,6 +97,7 @@ export default function App() {
                     <Route path="evidence" element={<PermissionBoundary permission="evidence.read"><EvidencePage /></PermissionBoundary>} />
                     <Route path="risk" element={<PermissionBoundary permission="risk.read"><RiskPage /></PermissionBoundary>} />
                     <Route path="reports" element={<PermissionBoundary permission="report.export"><ReportsPage /></PermissionBoundary>} />
+                    <Route path="assistant" element={<PermissionBoundary permission="investigation.read"><AssistantPage /></PermissionBoundary>} />
                     <Route path="audit" element={<PermissionBoundary permission="audit.read"><AuditPage /></PermissionBoundary>} />
                     <Route path="admin/users" element={<PermissionBoundary permission="user.manage"><UsersPage /></PermissionBoundary>} />
                     <Route path="admin/roles" element={<PermissionBoundary permission="user.manage"><RolesPage /></PermissionBoundary>} />

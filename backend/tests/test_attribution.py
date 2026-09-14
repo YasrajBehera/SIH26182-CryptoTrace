@@ -411,6 +411,45 @@ class TestConfidenceThresholds:
         assert svc._determine_confidence(0.0) == Confidence.LOW
 
 
+class TestCandidateFiltering:
+    """The analyze pipeline filters candidates to real signals: candidates
+    that score 0.0 are dropped and replaced by a single explicit UNKNOWN
+    placeholder instead of a wall of meaningless zero-score rows."""
+
+    def test_zero_score_candidates_are_filtered_to_placeholder(self, attr_service):
+        request = AttributionRequest(
+            address="0xunknown000000000000000000000000000000000000",
+            chain="eth",
+        )
+        response = attr_service.analyze(request)
+        assert len(response.candidates) == 1
+        placeholder = response.candidates[0]
+        assert placeholder.vasp_name == "UNKNOWN"
+        assert placeholder.score == 0.0
+        assert placeholder.confidence == Confidence.LOW
+        assert placeholder.evidence_ids == []
+        assert "No VASP candidates found" in " ".join(placeholder.explanation)
+
+    def test_positive_score_candidates_survive_filter(self, attr_service):
+        request = AttributionRequest(
+            address="0xaabb000000000000000000000000000000000001",
+            chain="eth",
+        )
+        response = attr_service.analyze(request)
+        assert len(response.candidates) > 0
+        assert all(c.score > 0.0 for c in response.candidates)
+        assert all(c.vasp_name != "UNKNOWN" for c in response.candidates)
+
+    def test_filtered_output_stays_sorted_descending(self, attr_service):
+        request = AttributionRequest(
+            address="0xaabb000000000000000000000000000000000001",
+            chain="eth",
+        )
+        response = attr_service.analyze(request)
+        scores = [c.score for c in response.candidates]
+        assert scores == sorted(scores, reverse=True)
+
+
 class TestLiveAttribution:
     def test_live_analysis_against_curated_public_directory(self, attr_service):
         request = AttributionRequest(

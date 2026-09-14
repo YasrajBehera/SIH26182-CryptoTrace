@@ -12,6 +12,7 @@ import {
   SearchIcon,
   SettingsIcon,
   ShieldIcon,
+  SparkIcon,
   TxIcon,
   UsersIcon,
   VaspIcon,
@@ -43,6 +44,7 @@ const MAIN_NAV: NavEntry[] = [
   { to: "/evidence", label: "Evidence", icon: <EvidenceIcon />, permission: "evidence.read" },
   { to: "/risk", label: "Risk Analysis", icon: <RiskIcon />, permission: "risk.read" },
   { to: "/reports", label: "Reports", icon: <ReportIcon />, permission: "report.export" },
+  { to: "/assistant", label: "Investigator Assistant", icon: <SparkIcon />, permission: "investigation.read" },
   { to: "/audit", label: "Audit Logs", icon: <AuditIcon />, permission: "audit.read" },
 ];
 

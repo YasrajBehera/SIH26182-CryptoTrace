@@ -82,6 +82,69 @@ def headers_app():
     return app
 
 
+class TestScopeResolution:
+    """The investigation subtree resolves to dedicated buckets so the heavy
+    /analyze POST never competes with the cheap list/detail reads a dashboard
+    issues per mount."""
+
+    def _middleware(self):
+        app = FastAPI()
+        return RateLimitMiddleware(
+            app,
+            limits={"/api/v1/auth": (5, 60), "investigations.analyze": (10, 60)},
+        )
+
+    def test_analyze_gets_own_bucket(self):
+        m = self._middleware()
+        assert m._scope_for("/api/v1/investigations/analyze") == "investigations.analyze"
+
+    def test_index_gets_list_bucket(self):
+        m = self._middleware()
+        assert m._scope_for("/api/v1/investigations") == "investigations.list"
+        assert m._scope_for("/api/v1/investigations/") == "investigations.list"
+
+    def test_detail_and_sub_resources_share_detail_bucket(self):
+        m = self._middleware()
+        assert m._scope_for("/api/v1/investigations/case-1") == "investigations.detail"
+        assert m._scope_for("/api/v1/investigations/case-1/context") == "investigations.detail"
+        assert m._scope_for("/api/v1/investigations/case-1/notes") == "investigations.detail"
+        assert m._scope_for("/api/v1/investigations/case-1/risk") == "investigations.detail"
+
+    def test_configured_prefixes_keep_literal_semantics(self):
+        m = self._middleware()
+        assert m._scope_for("/api/v1/auth/login") == "/api/v1/auth"
+        assert m._scope_for("/api/v1/auth/refresh") == "/api/v1/auth"
+
+    def test_unmatched_paths_use_default(self):
+        m = self._middleware()
+        assert m._scope_for("/api/v1/health") == "*"
+        assert m._scope_for("/anything") == "*"
+
+
+class TestAnalyzeIsolation:
+    def test_analyze_bucket_exhaustion_does_not_block_list(self):
+        app = FastAPI()
+
+        @app.post("/api/v1/investigations/analyze")
+        def analyze():
+            return {"ok": True}
+
+        @app.get("/api/v1/investigations")
+        def lst():
+            return {"ok": True}
+
+        app.add_middleware(
+            RateLimitMiddleware,
+            limits={"investigations.analyze": (1, 60), "/api/v1/auth": (2, 60)},
+            default=(3, 60),
+        )
+        client = TestClient(app)
+        assert client.post("/api/v1/investigations/analyze").status_code == 200
+        assert client.post("/api/v1/investigations/analyze").status_code == 429
+        for _ in range(3):
+            assert client.get("/api/v1/investigations").status_code == 200
+
+
 class TestSecurityHeaders:
     def test_security_headers_present(self, headers_app):
         client = TestClient(headers_app)

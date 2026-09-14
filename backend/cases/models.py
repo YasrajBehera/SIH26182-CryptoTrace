@@ -46,6 +46,7 @@ class InvestigationOut(BaseModel):
     risk: str = "unknown"
     status: str = "open"
     transactions: int = 0
+    persisted_transactions: int = 0
     vasp_candidates: int = 0
     evidence_count: int = 0
     assigned_analyst: str = "Unassigned"

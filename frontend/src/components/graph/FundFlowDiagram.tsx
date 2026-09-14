@@ -16,7 +16,7 @@ export function FundFlowDiagram({ path, demo, onNodeClick }: { path: GraphPath; 
     return (
       <div className="state" role="status">
         <p className="state-title">No flow path</p>
-        <p className="state-desc">Select a start and end entity to compute a path (requires Member 2 graph engine).</p>
+        <p className="state-desc">No fund-flow path available for this investigation.</p>
       </div>
     );
   }

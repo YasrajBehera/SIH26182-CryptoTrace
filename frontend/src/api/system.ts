@@ -17,6 +17,8 @@ export interface SystemStatus {
   vasp: boolean;
   report: boolean;
   sahyog: boolean;
+  /** True only when a production I4C/NCRP SAHYOG API is explicitly configured. */
+  sahyog_production: boolean;
 }
 
 export const system = {

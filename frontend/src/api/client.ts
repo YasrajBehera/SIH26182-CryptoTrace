@@ -67,6 +67,8 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   /** When true, resolve with the raw response body as a Blob plus its headers. */
   asBlob?: boolean;
+  /** External cancellation signal (e.g. from useApi on unmount). */
+  signal?: AbortSignal;
 }
 
 export interface BlobResult {
@@ -75,9 +77,17 @@ export interface BlobResult {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, query, timeoutMs = 30000, headers, asBlob } = options;
+  const { method = "GET", body, query, timeoutMs = 30000, headers, asBlob, signal } = options;
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  // Bridge an external abort signal (component unmount/teardown) into the
+  // per-request controller so aborted fetches are cut off at the network layer.
+  const onExternalAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", onExternalAbort, { once: true });
+  }
 
   let url = `${API_BASE}${path}`;
   if (query) {
@@ -145,6 +155,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       code: "network",
     });
   } finally {
+    if (signal) signal.removeEventListener("abort", onExternalAbort);
     window.clearTimeout(timer);
   }
 }

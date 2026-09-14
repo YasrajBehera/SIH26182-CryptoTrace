@@ -4,7 +4,7 @@ import { PageHeader, Button, Card, DemoBadge, Badge, Input, Field, EmptyState, L
 import { ExportIcon } from "@/components/icons";
 import { ReportSectionSelector, ReportPreview, ALL_REPORT_SECTIONS } from "@/components/reports/ReportComponents";
 import { useApi } from "@/hooks/useApi";
-import { investigations } from "@/api/investigations";
+import { investigations, mapPersistedCandidatesToView } from "@/api/investigations";
 import { wallets } from "@/api/wallets";
 import { attribution } from "@/api/attribution";
 import { evidence } from "@/api/evidence";
@@ -33,17 +33,46 @@ export function ReportsPage() {
     [caseParam],
   );
 
-  const { data: transfers } = useApi(
-    () => (targetValid ? wallets.getTransfers(target, 500).then((r) => r.transfers) : Promise.resolve([])),
-    [target],
+  // Persisted investigation context. Report previews must reuse the stored
+  // analysis instead of triggering a fresh full pipeline run on every open.
+  const { data: contextData } = useApi(
+    () => (caseParam ? investigations.context(caseParam) : Promise.resolve(null)),
+    [caseParam],
   );
 
-  const { data: candidates } = useApi(() => attribution.candidates(targetValid ? target : undefined), [target]);
-  const { data: evidenceItems } = useApi(() => evidence.list(targetValid ? target : undefined), [target]);
-  const { data: timeline } = useApi(() => investigations.timeline(), []);
-
   const walletAddress = caseData?.primaryWallet ?? (targetValid ? target : "");
+  const walletValid = !!walletAddress && validateAddressInput(walletAddress) === null;
   const network = caseData?.network ?? "Ethereum";
+
+  const persistedCandidates = useMemo(
+    () => mapPersistedCandidatesToView(contextData),
+    [contextData],
+  );
+
+  const { data: transfers } = useApi(
+    () => (walletValid ? wallets.getTransfers(walletAddress, 500).then((r) => r.transfers) : Promise.resolve([])),
+    [walletAddress, walletValid],
+  );
+
+  const { data: candidates } = useApi(
+    () => {
+      // Live + linked case: use persisted candidates from the last analysis.
+      if (!isDemo && caseParam && persistedCandidates.length) return Promise.resolve(persistedCandidates);
+      // Demo or unauth-cases: candidates(shallow) or a wallet-only exploratory
+      // report triggers a single analysis run.
+      return attribution.candidates(targetValid ? target : undefined);
+    },
+    [target, caseParam, isDemo, persistedCandidates],
+  );
+
+  const { data: evidenceItems } = useApi(
+    () => {
+      if (!isDemo && caseParam) return evidence.listByInvestigation(caseParam);
+      return evidence.list(targetValid ? target : undefined);
+    },
+    [target, caseParam, isDemo],
+  );
+  const { data: timeline } = useApi(() => investigations.timeline(), []);
 
   const toggleSection = (key: ReportSectionKey) => {
     setSections((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));

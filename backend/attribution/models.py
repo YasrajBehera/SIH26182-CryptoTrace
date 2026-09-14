@@ -34,7 +34,7 @@ class AttributionRequest(BaseModel):
     chain: str = Field("eth", description="Blockchain chain")
     graph_data: Optional[Dict] = Field(
         None,
-        description="Graph analysis results from Member 2 (neighbors, paths, clusters)",
+        description="Graph analysis results (neighbors, paths, clusters)",
     )
 
 

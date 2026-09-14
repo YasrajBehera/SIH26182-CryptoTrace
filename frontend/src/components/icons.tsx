@@ -124,3 +124,7 @@ export const CheckIcon = () => (
 export const SahyogIcon = () => (
   <Svg><rect x="2" y="3" width="20" height="18" rx="2" /><path d="M12 8v8" /><path d="M8 12l4 4 4-4" /></Svg>
 );
+
+export const SparkIcon = () => (
+  <Svg><path d="M12 3v4M12 17v4M3 12h4M17 12h4" /><path d="M12 8a4 4 0 0 1 4 4 4 4 0 1 1-4-4Z" fill="currentColor" stroke="none" opacity="0.25" /><path d="m6 6 1.5 1.5M18 18l-1.5-1.5M18 6l-1.5 1.5M6 18l1.5-1.5" /></Svg>
+);

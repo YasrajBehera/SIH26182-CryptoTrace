@@ -11,6 +11,7 @@ from cases.models import (
 )
 from cases.repository import MemoryInvestigationRepository
 from cases.service import (
+    CaseAccessError,
     CaseConflictError,
     CaseNotFoundError,
     InvestigationService,
@@ -55,6 +56,9 @@ class EvidenceServiceForTest:
             self.repo.store(updated)
             linked.append(updated)
         return linked
+
+    def get_evidence_for_investigation(self, investigation_id):
+        return self.repo.get_by_investigation(investigation_id)
 
     def seed(self, attribution_id, count=2):
         prov = Provenance(created_at="2025-01-01T00:00:00Z", method="test")
@@ -196,6 +200,112 @@ class TestCaseService:
                 data_source="live",
                 user=_user(),
             )
+
+    def test_analyst_can_create_case(self):
+        svc = _service()
+        out = svc.create(
+            InvestigationCreate(name="Analyst build", primary_wallet=ADDR),
+            _user(uid=5, role="analyst", username="analyst"),
+        )
+        assert out.id.startswith("case-")
+
+    def test_analyst_can_read_any_case(self):
+        svc = _service()
+        created = svc.create(
+            InvestigationCreate(name="Alpha", primary_wallet=ADDR), _user(uid=7)
+        )
+        fetched = svc.get(created.id, _user(uid=5, role="analyst", username="analyst"))
+        assert fetched.id == created.id
+
+    def test_reviewer_can_read_any_case(self):
+        svc = _service()
+        created = svc.create(
+            InvestigationCreate(name="Alpha", primary_wallet=ADDR), _user(uid=7)
+        )
+        fetched = svc.get(created.id, _user(uid=6, role="reviewer", username="reviewer"))
+        assert fetched.id == created.id
+
+    def test_analyst_list_sees_all_cases(self):
+        svc = _service()
+        svc.create(InvestigationCreate(name="mine", primary_wallet=ADDR), _user(uid=7))
+        svc.create(InvestigationCreate(name="yours", primary_wallet=ADDR), _user(uid=9))
+        listing = svc.list(_user(uid=5, role="analyst", username="analyst"))
+        assert len(listing.investigations) == 2
+
+    def test_analyst_cannot_update_foreign_case(self):
+        svc = _service()
+        created = svc.create(
+            InvestigationCreate(name="Alpha", primary_wallet=ADDR), _user(uid=7)
+        )
+        with pytest.raises(CaseAccessError):
+            svc.update(
+                created.id,
+                InvestigationUpdate(status="review"),
+                _user(uid=5, role="analyst", username="analyst"),
+            )
+
+    def test_analyst_cannot_apply_analysis_to_foreign_case(self):
+        svc = _service()
+        created = svc.create(
+            InvestigationCreate(name="Alpha", primary_wallet=ADDR), _user(uid=7)
+        )
+        with pytest.raises(CaseAccessError):
+            svc.apply_analysis(
+                case_id=created.id,
+                address=ADDR,
+                analysis_id="attr-1",
+                data_source="live",
+                user=_user(uid=5, role="analyst", username="analyst"),
+            )
+
+    def test_context_scope_for_read_all_roles(self):
+        svc = _service()
+        created = svc.create(
+            InvestigationCreate(name="Alpha", primary_wallet=ADDR), _user(uid=7)
+        )
+        analyst = svc.context(
+            created.id, _user(uid=5, role="analyst", username="analyst")
+        )
+        reviewer = svc.context(
+            created.id, _user(uid=6, role="reviewer", username="reviewer")
+        )
+        assert analyst.scope == "read_all"
+        assert reviewer.scope == "read_all"
+
+    def test_persisted_transactions_is_unique_wallet_count(self):
+        svc = _service()
+        created = svc.create(
+            InvestigationCreate(name="Alpha", primary_wallet=ADDR), _user()
+        )
+        out = svc.apply_analysis(
+            case_id=created.id,
+            address=ADDR,
+            analysis_id="attr-1",
+            data_source="live",
+            transactions=[
+                {
+                    "tx_hash": "0xdup",
+                    "chain": "eth",
+                    "block_timestamp": 1704067200,
+                    "from_address": ADDR,
+                    "to_address": "0xcc",
+                    "value": "100",
+                },
+                {
+                    "tx_hash": "0xdup",
+                    "chain": "eth",
+                    "block_timestamp": 1704067201,
+                    "from_address": ADDR,
+                    "to_address": "0xcc",
+                    "value": "200",
+                },
+            ],
+            user=_user(),
+        )
+        # "transactions" mirrors the latest ingestion batch size, while the
+        # persisted count reflects the de-duplicated wallet store.
+        assert out.transactions == 2
+        assert out.persisted_transactions == 1
 
 
 class TestCasesAPI:

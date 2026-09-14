@@ -75,6 +75,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
     "analyst": frozenset(
         {
             "investigation.read",
+            "investigation.create",
             "investigation.update",
             "wallet.read",
             "wallet.analyze",

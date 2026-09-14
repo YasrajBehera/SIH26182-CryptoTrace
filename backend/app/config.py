@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     neo4j_username: str = "neo4j"
     neo4j_password: str = "change_me"
 
+    # ---- SAHYOG integration ------------------------------------------------
+    # SAHYOG module ships integration-ready (referral intake/triage/handoff
+    # against the local repository) but no government production API is used
+    # unless explicitly configured. The System Status report must never claim a
+    # live I4C/NCRP connection without this flag.
+    sahyog_production_api_configured: bool = False
+
     # ---- Security ---------------------------------------------------------
     # Token-signing secret. In development an empty value generates a fresh
     # random secret at boot and reports it ONCE (never persisted). Production

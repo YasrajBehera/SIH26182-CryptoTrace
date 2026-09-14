@@ -98,6 +98,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     ``limits`` maps a URL scope to ``(max_requests, window_seconds)``. A
     ``scope`` of ``"*"`` is the default for anything not explicitly listed.
     Health/root endpoints are exempt so the frontend boot probe always works.
+
+    Scopes are resolved segment-precise rather than by naive prefix matching:
+    a bare ``/api/v1/investigations`` limit previously shared one tight bucket
+    across LIST, GET, notes, risk, context, and the expensive ``/analyze``
+    pipeline POST (one workspace load could blow the whole window). Now the
+    investigation subtree resolves to ``investigations.list`` (index),
+    ``investigations.detail`` (a single case and its sub-resources) and
+    ``investigations.analyze`` (the analyze POST), while the auth subtree keeps
+    the callers' literal prefix semantics for backward compatibility.
     """
 
     def __init__(
@@ -114,6 +123,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._hits: Dict[Tuple[str, str], List[float]] = defaultdict(list)
 
     def _scope_for(self, path: str) -> str:
+        segments = [s for s in path.strip("/").split("/")]
+        if segments[:3] == ["api", "v1", "investigations"]:
+            # Dedicated bucket for the single-shot pipeline run; the analyze
+            # POST is the heaviest endpoint and must never compete with the
+            # cheap list/detail reads that a dashboard page issues per mount.
+            if segments and segments[-1] == "analyze":
+                return "investigations.analyze"
+            if len(segments) == 3:
+                return "investigations.list"
+            return "investigations.detail"
+        # Any remaining configured prefixes keep literal prefix semantics so
+        # callers opting into a narrow bucket (e.g. /api/v1/auth) still get it.
         for prefix in self._limits:
             if path.startswith(prefix):
                 return prefix
