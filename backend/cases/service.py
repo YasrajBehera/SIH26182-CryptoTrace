@@ -22,7 +22,7 @@ from intelligence.sanctions_service import (
     sanctions_analysis_id,
     sanctions_evidence_id,
 )
-from risk.repository import RiskRepository
+from risk.repository import RiskRepository, canonical_chain
 from risk.service import RiskService
 from wallets.repository import WalletRepository
 from wallets.service import WalletService
@@ -93,7 +93,7 @@ class InvestigationService:
                 "name": payload.name,
                 "description": payload.description,
                 "primary_wallet": payload.primary_wallet.lower(),
-                "network": payload.network,
+                "network": canonical_chain(payload.network),
                 "priority": payload.priority,
                 "created_by": user.id,
                 "tags": list(payload.tags),
@@ -141,6 +141,8 @@ class InvestigationService:
         changes = payload.model_dump(exclude_unset=True)
         if "primary_wallet" in changes:
             changes["primary_wallet"] = changes["primary_wallet"].lower()
+        if "network" in changes:
+            changes["network"] = canonical_chain(changes["network"])
         record = self._repo.update(case_id, changes)
         return self._to_out(record)
 

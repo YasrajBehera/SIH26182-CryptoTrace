@@ -9,6 +9,20 @@ from typing import Dict, Optional
 from app.db import SessionLocal, database_available
 
 
+def canonical_chain(chain: str) -> str:
+    """Map any accepted chain spelling to the canonical identifier used by the
+    risk store (the same identifier the frontend sends as ``?chain=``).
+
+    The frontend normalizes ``ethereum`` -> ``eth`` before persisting a case,
+    but clients that call the backend directly (harnesses, seeds, scripts) may
+    store ``network="ethereum"`` or ``"Ethereum"``. Risk rows are keyed by the
+    case network, so without normalization an exact ``chain == "eth"`` lookup
+    misses the row even though it exists -> a spurious 404 on read-after-write.
+    """
+    normalized = (chain or "eth").strip().lower()
+    return "eth" if normalized == "ethereum" else normalized
+
+
 class RiskRepository:
     is_demo: bool = True
 
@@ -53,7 +67,9 @@ class MemoryRiskRepository(RiskRepository):
             }
             if assessment.investigation_id:
                 self._by_investigation[assessment.investigation_id] = record
-            self._by_wallet[(assessment.wallet_address, assessment.chain)] = record
+            self._by_wallet[
+                (assessment.wallet_address, canonical_chain(assessment.chain))
+            ] = record
 
     def get_latest(self, investigation_id: str):
         with self._lock:
@@ -72,7 +88,7 @@ class MemoryRiskRepository(RiskRepository):
 
     def get_latest_for_wallet(self, address: str, chain: str):
         with self._lock:
-            record = self._by_wallet.get((address.lower(), chain))
+            record = self._by_wallet.get((address.lower(), canonical_chain(chain)))
             if record:
                 from risk.service import RiskAssessment, RiskFactor, RiskSignal
 
@@ -103,7 +119,7 @@ class DbRiskRepository(RiskRepository):
                 models.RiskAssessment(
                     investigation_id=assessment.investigation_id,
                     wallet_address=assessment.wallet_address,
-                    chain=assessment.chain,
+                    chain=canonical_chain(assessment.chain),
                     level=assessment.level,
                     risk_score=Decimal(str(assessment.risk_score)),
                     summary=assessment.summary,
@@ -156,8 +172,19 @@ class DbRiskRepository(RiskRepository):
     def get_latest_for_wallet(self, address: str, chain: str):
         from risk.service import RiskAssessment
 
+        from sqlalchemy import func
+
+        canonical = canonical_chain(chain)
+        # Accept the canonical identifier and every alias that canonicalizes to
+        # the same value (e.g. legacy rows persisted with chain="ethereum" stay
+        # readable via ?chain=eth).
+        candidates = {
+            canonical,
+            "ethereum" if canonical in ("eth", "ethereum") else canonical,
+        }
         data = self._latest_common(
-            lambda m: (m.wallet_address == address.lower()) & (m.chain == chain)
+            lambda m: (m.wallet_address == address.lower())
+            & (func.lower(m.chain).in_(candidates))
         )
         if data is None:
             return None

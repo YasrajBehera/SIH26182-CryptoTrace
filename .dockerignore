@@ -1,0 +1,35 @@
+# Secrets — never bake into images
+.env
+.env.*
+!.env.example
+backend/.auth_dev_secret
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Node
+frontend/node_modules/
+node_modules/
+frontend/dist/
+dist/
+frontend/build/
+build/
+
+# Data / models
+data/*
+!data/raw/.gitkeep
+backend/_audit_report.pdf
+
+# IDE/OS/scm
+.git/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+frontend/tsconfig.tsbuildinfo

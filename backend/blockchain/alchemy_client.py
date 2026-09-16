@@ -174,6 +174,45 @@ class AlchemyClient:
             return None
         return int(datetime.fromtimestamp(ts, tz=timezone.utc).timestamp())
 
+    async def is_healthy(self) -> bool:
+        """Cheap live provider probe: fetch the latest block number.
+
+        ``eth_blockNumber`` costs one lightweight JSON-RPC round trip and fails
+        fast on a missing/expired key, wrong network, or unreachable endpoint —
+        unlike a presence check that only inspects the environment. The result
+        is discarded; we only prove the provider answered.
+        """
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_blockNumber",
+            "params": [],
+        }
+        client = self._get_client()
+        try:
+            response = await client.post(self._base_url, json=payload)
+        except (httpx.TimeoutException, httpx.HTTPError):
+            return False
+
+        if response.status_code != 200:
+            return False
+
+        try:
+            data = response.json()
+        except ValueError:
+            return False
+
+        if not isinstance(data, dict) or "error" in data:
+            return False
+
+        block_hex = data.get("result")
+        if not block_hex:
+            return False
+        try:
+            return int(str(block_hex), 16) > 0
+        except (TypeError, ValueError):
+            return False
+
     async def _rpc(self, payload: dict[str, Any]) -> dict[str, Any]:
         client = self._get_client()
         try:

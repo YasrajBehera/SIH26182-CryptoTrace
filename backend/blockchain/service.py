@@ -48,6 +48,24 @@ class BlockchainService:
         self._pagination = pagination or PaginationConfig()
         self.wallet_repository = wallet_repository
 
+    async def provider_health(self, timeout: float = 5.0) -> bool:
+        """Cheap live provider probe for external health/status surfaces.
+
+        Returns True only when the configured provider actually answers a
+        lightweight ``eth_blockNumber`` request. Unlike a key-presence check
+        this fails fast when the key is missing, expired, on the wrong network,
+        or the endpoint is unreachable. Returns False on any failure so callers
+        never raise for an honest ``down`` status.
+        """
+        try:
+            async with self._client or AlchemyClient(
+                api_key=os.environ.get("ALCHEMY_API_KEY") or settings.alchemy_api_key,
+                timeout=timeout,
+            ) as client:
+                return await client.is_healthy()
+        except Exception:
+            return False
+
     async def get_wallet_transfers(
         self,
         wallet_address: str,
