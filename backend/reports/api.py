@@ -15,7 +15,16 @@ from reports.service import ReportBuildError, build_pdf_bytes
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 
 
-def _resolve_context(metadata: report_models.ReportMetadata, service) -> dict:
+def _resolve_context(
+    metadata: report_models.ReportMetadata, service, wallet_service=None
+) -> dict:
+    from wallets.repository import make_wallet_repository
+    from wallets.service import WalletService
+
+    if wallet_service is None:
+        # Fallback so callers/tests that only hold the investigation service
+        # still resolve the persisted wallet-store count.
+        wallet_service = WalletService(repository=make_wallet_repository())
     context = {"metadata": metadata.model_dump(), "graph_status": "UNAVAILABLE"}
     from graph.api import get_driver
 
@@ -38,9 +47,30 @@ def _resolve_context(metadata: report_models.ReportMetadata, service) -> dict:
             case = None
         if case:
             context["case"] = case
+            # The raw record only carries the latest ingestion batch; the
+            # number of transactions actually persisted in the wallet store is
+            # the wallet summary count (duplicate (chain, tx_hash) rows are
+            # de-duplicated there). The PDF must report the persisted count.
+            try:
+                summary = wallet_service.summarize(
+                    case.get("primary_wallet", ""), case.get("network", "eth")
+                )
+                if summary is not None:
+                    case["persisted_transactions"] = summary.transaction_count
+            except Exception:
+                pass
             assessment = service.risk_for(metadata.case_id, service_user())
             if assessment:
                 context["risk_disclaimer"] = assessment.disclaimer
+                # SEPARATE criminal/sanctions intelligence block (exact match
+                # in the curated public directory). Kept out of every other
+                # section so it can never be merged with VASP attribution.
+                context["criminal_intelligence"] = (
+                    assessment.criminal_intelligence
+                )
+                # SEPARATE ML suspicious-wallet block. Kept out of every other
+                # section; the report renders it only inside risk_assessment.
+                context["ml_assessment"] = assessment.ml_assessment
     return context
 
 
@@ -85,15 +115,33 @@ def export_report(
     The endpoint streams ``application/pdf`` bytes. The report reflects only
     persisted investigation data; missing information is marked UNAVAILABLE.
     """
-    from cases.api import get_investigation_service_dep
+    from cases.repository import make_investigation_repository
+    from cases.service import InvestigationService
+    from evidence.api import get_evidence_service
+    from risk.repository import make_risk_repository
+    from wallets.repository import make_wallet_repository
+    from wallets.service import WalletService
 
-    investigation_service = get_investigation_service_dep()
+    # Build a concrete service with real repositories. The FastAPI dependency
+    # (get_investigation_service_dep) must never be called directly here: its
+    # ``Depends(...)`` defaults only resolve inside request DI, so calling it
+    # outside would wire ``Depends`` marker objects into the service and make
+    # every repo call crash with ``AttributeError: 'Depends' object has no
+    # attribute 'get'`` — which previously let the whole PDF body render as
+    # UNAVAILABLE while the header still showed the real case metadata.
+    investigation_service = InvestigationService(
+        repository=make_investigation_repository(),
+        evidence_service=get_evidence_service(),
+        wallet_repository=make_wallet_repository(),
+        risk_repository=make_risk_repository(),
+    )
+    wallet_service = WalletService(repository=make_wallet_repository())
 
     metadata = payload.metadata
     generated_at = metadata.generated_at or datetime.now(timezone.utc).isoformat()
     metadata.generated_at = generated_at
 
-    context = _resolve_context(metadata, investigation_service)
+    context = _resolve_context(metadata, investigation_service, wallet_service)
     context["selected_sections"] = [
         s for s in payload.sections if s in report_models.REPORT_SECTIONS
     ]

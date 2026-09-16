@@ -11,6 +11,14 @@ import app.db as _app_db
 _app_db._database_available = False
 
 
+@pytest.fixture(autouse=True)
+def _pin_deployment_model_dir(monkeypatch, tmp_path):
+    """Keep the suite hermetic: never auto-load the real packaged model at
+    backend/ml/models during tests. Tests that intentionally exercise that
+    artifact override CRYPTOTRACE_MODEL_DIR inside their own body."""
+    monkeypatch.setenv("CRYPTOTRACE_MODEL_DIR", str(tmp_path / "nonexistent-model"))
+
+
 @pytest.fixture
 def fake_session():
     return FakeSession()

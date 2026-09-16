@@ -27,4 +27,7 @@ Thumbs.db
 *.log
 data/raw/*
 !data/raw/.gitkeep
+data/models/
+data/datasets/
+backend/_audit_report.pdf
 frontend/tsconfig.tsbuildinfo

@@ -21,6 +21,7 @@ REPORT_SECTIONS = [
     "fund_flow",
     "graph_analysis",
     "vasp_candidates",
+    "criminal_sanctions_intelligence",
     "evidence",
     "risk_assessment",
     "analyst_notes",
@@ -36,7 +37,8 @@ _SECTION_TITLES = {
     "transaction_analysis": "Transaction Analysis",
     "fund_flow": "Fund Flow",
     "graph_analysis": "Graph Analysis",
-    "vasp_candidates": "VASP Candidates",
+    "vasp_candidates": "VASP Attribution",
+    "criminal_sanctions_intelligence": "Criminal / Sanctions Intelligence",
     "evidence": "Evidence Record",
     "risk_assessment": "Risk Assessment",
     "analyst_notes": "Analyst Notes",
@@ -105,7 +107,12 @@ def build_section_content(key: str, context: dict) -> str:
             f"{context.get('metadata', {}).get('classification', 'UNCLASSIFIED')}"
         )
     if key == "wallet_overview":
-        txns = case.get("transactions")
+        # "Transactions persisted" is the wallet-store count (de-duplicated
+        # by (chain, tx_hash)); the raw record only holds the latest batch, so
+        # prefer the persisted count supplied by the export context.
+        txns = case.get("persisted_transactions")
+        if txns is None:
+            txns = case.get("transactions")
         if txns is None:
             txns = len(case.get("latest_transactions") or [])
         candidates_n = case.get("vasp_candidates")
@@ -150,22 +157,80 @@ def build_section_content(key: str, context: dict) -> str:
         candidates = case.get("latest_candidates") or []
         if not candidates:
             return "No VASP attribution candidates available for this case."
-        lines = ["Ranked VASP attribution candidates:", "-" * 40]
+        lines = ["Ranked VASP attribution candidates (transactional association, "
+                 "not ownership or criminal-risk scoring):", "-" * 40]
         for c in candidates:
             lines.append(
                 f"{c.get('score', 0):>5.1f}/100 {c.get('confidence', '?')}  {c.get('vasp_name')}"
             )
         return "\n".join(lines)
+    if key == "criminal_sanctions_intelligence":
+        ci = context.get("criminal_intelligence") or {}
+        if not ci:
+            return (
+                f"Criminal / sanctions intelligence for "
+                f"{case.get('primary_wallet') or 'UNAVAILABLE'}.\n"
+                "No curated public sanctions/illicit intelligence match is "
+                "recorded for this wallet.\n"
+                "Criminal/sanctions level: UNKNOWN / NOT ASSESSED.\n"
+                "Absence of a match is not evidence that the wallet is lawful.\n"
+                "Sanctions data: CURATED PUBLIC INTELLIGENCE (not a live OFAC "
+                "integration)."
+            )
+        return (
+            f"Criminal / sanctions intelligence for "
+            f"{case.get('primary_wallet') or 'UNAVAILABLE'} on "
+            f"{case.get('network') or context.get('metadata', {}).get('network', 'eth')}.\n"
+            f"Level: {ci.get('level', 'UNKNOWN').upper()}\n"
+            f"Reason: {ci.get('reason') or 'Exact address match against curated public sanctions/illicit intelligence.'}\n"
+            f"Entity: {ci.get('entity') or 'UNAVAILABLE'}\n"
+            f"Source: {ci.get('source') or 'UNAVAILABLE'} (source_type {ci.get('source_type') or 'UNAVAILABLE'})\n"
+            f"Confidence: {ci.get('confidence') or 'UNAVAILABLE'}\n"
+            f"Match type: {ci.get('match_type') or 'exact_address'}\n"
+            f"Evidence id: {ci.get('evidence_id') or 'UNAVAILABLE'}\n"
+            "Sanctions data: CURATED PUBLIC INTELLIGENCE (not a live OFAC "
+            "integration).\n"
+            "This indicates the address matches a curated public "
+            "sanctions/illicit intelligence record; it is not a determination "
+            "that any connected wallet is criminal, and the analytical VASP "
+            "score is unaffected by this block."
+        )
     if key == "evidence":
         return (
             f"Evidence count linked to case: "
             f"{case.get('evidence_count', 0)}.\n"
             "Each evidence record carries provenance (created_by, method, "
-            "created_at) accessible via GET /api/v1/evidence/investigation/{id}."
+            "created_at, source_type) accessible via "
+            "GET /api/v1/evidence/investigation/{id}."
         )
     if key == "risk_assessment":
+        ml = context.get("ml_assessment") or {}
+        ml_text = (
+            f"ML suspicious-wallet probability: UNKNOWN / NOT ASSESSED "
+            f"(status {ml.get('status', 'not_trained')})."
+        )
+        if ml.get("status") == "trained" and ml.get("probability") is not None:
+            ml_text = (
+                f"ML suspicious-wallet probability: {ml.get('probability'):.3f} "
+                f"(label {ml.get('label')}, model "
+                f"{ml.get('model_version')}, training dataset "
+                f"{ml.get('dataset_version')}). Model-estimated suspicious "
+                "activity probability, NOT a determination of criminality."
+            )
+        elif ml.get("status") == "unavailable":
+            ml_text = (
+                "ML suspicious-wallet probability: UNKNOWN / NOT ASSESSED "
+                "because required features could not be computed from on-chain "
+                "data (missing: "
+                + ", ".join(ml.get("missing_features") or [])
+                + "). No values were imputed."
+            )
         return (
-            f"Analytical risk: {case.get('risk') or 'UNAVAILABLE'}.\n"
+            f"Analytical risk: {case.get('risk') or 'UNAVAILABLE'} (heuristic "
+            "score; see wallet_overview).\n"
+            f"Criminal/sanctions intelligence, when present, is reported in its "
+            "own separate section.\n"
+            f"{ml_text}\n"
             "Risk scores are analytical heuristics only; they are NOT "
             "determinations of criminality, illegality, or ownership.\n"
             "Disclaimer: " + context.get("risk_disclaimer", "")

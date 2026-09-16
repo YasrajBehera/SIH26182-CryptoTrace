@@ -8,7 +8,7 @@ import { RISK_ORDER } from "@/api/types";
 
 export function RiskPage() {
   const { isDemo } = useDataSource();
-  const { data: cases, loading, error, reload } = useApi(() => investigations.list(), []);
+  const { data: cases, loading, error, reload } = useApi((signal) => investigations.list(signal), []);
 
   const [level, setLevel] = useState("all");
   const [q, setQ] = useState("");

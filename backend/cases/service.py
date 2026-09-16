@@ -16,7 +16,12 @@ from cases.models import (
     InvestigationUpdate,
 )
 from cases.repository import InvestigationRepository, make_investigation_repository
+from evidence.models import EvidenceType
 from evidence.service import EvidenceService
+from intelligence.sanctions_service import (
+    sanctions_analysis_id,
+    sanctions_evidence_id,
+)
 from risk.repository import RiskRepository
 from risk.service import RiskService
 from wallets.repository import WalletRepository
@@ -48,11 +53,17 @@ class InvestigationService:
         evidence_service: Optional[EvidenceService] = None,
         wallet_repository: Optional[WalletRepository] = None,
         risk_repository: Optional[RiskRepository] = None,
+        ml_service=None,
     ) -> None:
         self._repo = repository or make_investigation_repository()
         self._evidence = evidence_service or EvidenceService()
         self._wallet_service = WalletService(repository=wallet_repository)
         self._risk_service = RiskService(repository=risk_repository)
+        if ml_service is None:
+            from ml.service import MLRiskService
+
+            ml_service = MLRiskService()
+        self._ml_service = ml_service
 
     @property
     def is_persistent(self) -> bool:
@@ -196,6 +207,24 @@ class InvestigationService:
         )
         self._risk_service.persist(assessment)
 
+        # Persist the SEPARATE sanctions_match evidence when the risk engine
+        # found an exact match in the curated public intelligence directory.
+        # Creation is idempotent (deterministic evidence id) so re-running an
+        # analysis never duplicates the record or its provenance.
+        if assessment.criminal_intelligence:
+            if self._persist_sanctions_evidence(case_id, address, assessment):
+                evidence_count += 1
+
+        # Persist the SEPARATE ML prediction evidence when the deployment holds
+        # a genuinely trained artifact. The record pins model_version and
+        # dataset_version in its provenance so every evidence trail is auditable.
+        if (
+            assessment.ml_assessment
+            and assessment.ml_assessment.get("status") == "trained"
+        ):
+            if self._persist_ml_evidence(case_id, address, assessment):
+                evidence_count += 1
+
         # Persist the flow into the wallet store and refresh summaries.
         self._wallet_service.register_analysis(
             address=address,
@@ -218,6 +247,87 @@ class InvestigationService:
             },
         )
         return self._to_out(record)
+
+    def _persist_sanctions_evidence(
+        self, case_id: str, address: str, assessment
+    ) -> bool:
+        """Create YES--ONE sanctions_match evidence record per sanctioned
+        address. The record is keyed by a deterministic attribution id and is
+        idempotent: re-applying the analysis to the SAME case never creates a
+        duplicate, and re-opening the wallet on ANOTHER case simply re-links the
+        existing record instead of minting a second one."""
+        attribution_id = sanctions_analysis_id(address, assessment.chain)
+        existing = self._evidence.get_evidence_for_attribution(attribution_id)
+        if any(r.investigation_id == case_id for r in existing):
+            return False
+        if existing and self._evidence.link_to_investigation(attribution_id, case_id):
+            return False
+        ci = assessment.criminal_intelligence or {}
+        record = self._evidence.create_evidence(
+            evidence_id=sanctions_evidence_id(address, assessment.chain),
+            attribution_id=attribution_id,
+            investigation_id=case_id,
+            evidence_type=EvidenceType.SANCTIONS_MATCH,
+            address=address,
+            chain=assessment.chain,
+            confidence=0.9,
+            description=(
+                f"Exact address match against curated public "
+                f"sanctions/illicit intelligence. Entity: {ci.get('entity')}. "
+                f"Source: {ci.get('source')} (source_type "
+                f"{ci.get('source_type')}). Investigative intelligence signal; "
+                "verify independently."
+            ),
+            source=ci.get("source") or "OFAC",
+            method="sanctions_intelligence_exact_match",
+            source_type="curated_public_intelligence",
+        )
+        return record is not None
+
+    def _persist_ml_evidence(self, case_id: str, address: str, assessment) -> bool:
+        """Create one ML_PREDICTION evidence record per trained prediction.
+
+        Deterministic evidence/attribution ids make the record idempotent across
+        re-runs. The record carries model_version and dataset_version so the
+        evidence trail pins exactly which trained model and training dataset
+        produced the probability — nothing is ever referenced generically.
+        """
+        from ml.service import ml_analysis_id, ml_evidence_id
+
+        ml = assessment.ml_assessment or {}
+        attribution_id = ml_analysis_id(address, assessment.chain)
+        existing = self._evidence.get_evidence_for_attribution(attribution_id)
+        if any(r.investigation_id == case_id for r in existing):
+            return False
+        probability = ml.get("probability")
+        record = self._evidence.create_evidence(
+            evidence_id=ml_evidence_id(address, assessment.chain),
+            attribution_id=attribution_id,
+            investigation_id=case_id,
+            evidence_type=EvidenceType.ML_PREDICTION,
+            address=address,
+            chain=assessment.chain,
+            confidence=float(probability or 0.0),
+            description=(
+                f"Trained suspicious-wallet classifier produced a "
+                f"model-estimated suspicious activity probability of "
+                f"{probability:.4f} (label {ml.get('label')}; threshold "
+                f"{ml.get('threshold')}). Top features: "
+                + ", ".join(
+                    f"{t.get('feature')} (gain {t.get('gain'):.2f})"
+                    for t in (ml.get("top_features") or [])[:5]
+                )
+                + f". Model {ml.get('model_version')}, dataset "
+                f"{ml.get('dataset_version')}. This is an investigative "
+                "signal, not a determination of criminality."
+            ),
+            source="ml",
+            method=f"lightgbm_classifier_{ml.get('model_version') or 'unknown'}",
+            source_type="ml_model",
+            model_version=ml.get("model_version"),
+            dataset_version=ml.get("dataset_version"),
+        )
+        return record is not None
 
     def risk_for(self, case_id: str, user):
         case = self._require_case(case_id, user)

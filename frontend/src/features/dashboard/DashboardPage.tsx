@@ -60,7 +60,7 @@ export function DashboardPage() {
   const { can } = useAuth();
   const demo = isDemoMode();
 
-  const { data: cases, loading: casesLoading, error: casesError, reload: reloadCases } = useApi(() => investigations.list(), []);
+  const { data: cases, loading: casesLoading, error: casesError, reload: reloadCases } = useApi((signal) => investigations.list(signal), []);
   const { data: feed } = useApi(() => activity.feed(), []);
   const { data: evidenceItems } = useApi(() => evidence.list(), []);
   const { data: candidates } = useApi(() => attribution.candidates(), []);

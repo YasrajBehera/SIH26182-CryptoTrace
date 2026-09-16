@@ -42,6 +42,12 @@ class MemoryRiskRepository(RiskRepository):
                 "summary": assessment.summary,
                 "reasoning": list(assessment.reasoning),
                 "factors": assessment.factors,
+                "criminal_intelligence": assessment.criminal_intelligence,
+                "signals": [
+                    s.model_dump() if not isinstance(s, dict) else s
+                    for s in assessment.signals
+                ],
+                "ml_assessment": assessment.ml_assessment,
                 "data_source": assessment.data_source,
                 "created_at": assessment.created_at,
             }
@@ -53,10 +59,14 @@ class MemoryRiskRepository(RiskRepository):
         with self._lock:
             record = self._by_investigation.get(investigation_id)
             if record:
-                from risk.service import RiskAssessment, RiskFactor
+                from risk.service import RiskAssessment, RiskFactor, RiskSignal
 
                 return RiskAssessment(
-                    **{**record, "factors": [RiskFactor(**f) if not isinstance(f, RiskFactor) else f for f in record["factors"]]}
+                    **{
+                        **record,
+                        "factors": [RiskFactor(**f) if not isinstance(f, RiskFactor) else f for f in record["factors"]],
+                        "signals": [RiskSignal(**s) if not isinstance(s, RiskSignal) else s for s in record.get("signals") or []],
+                    }
                 )
             return None
 
@@ -64,10 +74,14 @@ class MemoryRiskRepository(RiskRepository):
         with self._lock:
             record = self._by_wallet.get((address.lower(), chain))
             if record:
-                from risk.service import RiskAssessment, RiskFactor
+                from risk.service import RiskAssessment, RiskFactor, RiskSignal
 
                 return RiskAssessment(
-                    **{**record, "factors": [RiskFactor(**f) if not isinstance(f, RiskFactor) else f for f in record["factors"]]}
+                    **{
+                        **record,
+                        "factors": [RiskFactor(**f) if not isinstance(f, RiskFactor) else f for f in record["factors"]],
+                        "signals": [RiskSignal(**s) if not isinstance(s, RiskSignal) else s for s in record.get("signals") or []],
+                    }
                 )
             return None
 
@@ -94,6 +108,8 @@ class DbRiskRepository(RiskRepository):
                     risk_score=Decimal(str(assessment.risk_score)),
                     summary=assessment.summary,
                     factors=factor_dicts,
+                    criminal_intelligence=assessment.criminal_intelligence,
+                    ml_assessment=assessment.ml_assessment,
                 )
             )
             session.commit()
@@ -110,7 +126,7 @@ class DbRiskRepository(RiskRepository):
             )
             if row is None:
                 return None
-        return {
+        data = {
             "investigation_id": row.investigation_id,
             "wallet_address": row.wallet_address,
             "chain": row.chain,
@@ -119,9 +135,13 @@ class DbRiskRepository(RiskRepository):
             "summary": row.summary,
             "reasoning": [],
             "factors": row.factors or [],
+            "criminal_intelligence": row.criminal_intelligence,
+            "signals": (row.criminal_intelligence or {}).get("signals") or [],
+            "ml_assessment": row.ml_assessment,
             "data_source": "analytical_heuristic",
             "created_at": row.created_at.isoformat(),
         }
+        return data
 
     def get_latest(self, investigation_id: str):
         from risk.service import RiskAssessment

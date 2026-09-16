@@ -1,5 +1,7 @@
 """Tests for the analytical risk assessment module."""
 
+from pathlib import Path
+
 from risk.repository import MemoryRiskRepository
 from risk.service import RiskService
 
@@ -83,6 +85,51 @@ class TestRiskService:
         got = self.svc.get_for_wallet(ADDR, "eth")
         assert got is not None
         assert got.level in {"critical", "high"}
+
+
+class TestLiveMLApi:
+    def test_wallet_ml_not_trained_without_artifact(self, app_client, monkeypatch, tmp_path):
+        monkeypatch.setenv("CRYPTOTRACE_MODEL_ROOT", str(tmp_path))
+        resp = app_client.get(f"/api/v1/risk/wallet/{ADDR}/ml")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "not_trained"
+        assert body["probability"] is None
+        assert body["label"] == "UNKNOWN"
+        assert "UNKNOWN / NOT ASSESSED" in body["wording"]
+
+    def test_wallet_ml_full_assessment_shape(self, app_client, monkeypatch, tmp_path):
+        monkeypatch.setenv("CRYPTOTRACE_MODEL_ROOT", str(tmp_path))
+        resp = app_client.get(f"/api/v1/risk/wallet/{ADDR}/ml?chain=eth")
+        body = resp.json()
+        for key in (
+            "status", "probability", "label", "level", "threshold",
+            "required_features", "missing_features", "top_features",
+            "model_version", "dataset_version", "explanation", "wording",
+            "disclaimer",
+        ):
+            assert key in body
+
+    def test_wallet_ml_trained_with_real_joblib(self, app_client, monkeypatch):
+        real_dir = str(
+            Path(__file__).resolve().parents[2] / "backend" / "ml" / "models"
+        )
+        monkeypatch.setenv("CRYPTOTRACE_MODEL_DIR", real_dir)
+        resp = app_client.get(f"/api/v1/risk/wallet/{ADDR}/ml?chain=eth")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "trained"
+        assert body["probability"] is not None and 0.0 <= body["probability"] <= 1.0
+        assert body["model_version"] == "1.0.0"
+        assert "Elliptic2:Bitcoin" in body["dataset_version"]
+        assert "Bitcoin" in body["explanation"]
+        assert "NOT validated for eth" in body["disclaimer"]
+        assert set(body["required_features"]) == {
+            "outgoing_count",
+            "incoming_count",
+            "tx_count",
+            "unique_counterparties",
+        }
 
 
 class TestRiskAPI:

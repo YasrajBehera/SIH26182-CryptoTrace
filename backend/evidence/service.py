@@ -32,9 +32,13 @@ class EvidenceService:
         timestamp: int | None = None,
         method: str = "attribution_engine_v1",
         investigation_id: str | None = None,
+        evidence_id: str | None = None,
+        source_type: str | None = None,
+        model_version: str | None = None,
+        dataset_version: str | None = None,
     ) -> EvidenceRecord:
         record = EvidenceRecord(
-            evidence_id=f"ev-{uuid.uuid4().hex[:12]}",
+            evidence_id=evidence_id or f"ev-{uuid.uuid4().hex[:12]}",
             attribution_id=attribution_id,
             investigation_id=investigation_id,
             evidence_type=evidence_type,
@@ -51,6 +55,9 @@ class EvidenceService:
                 created_by="attribution_engine",
                 method=method,
                 version="0.1.0",
+                source_type=source_type,
+                model_version=model_version,
+                dataset_version=dataset_version,
             ),
         )
         self._repo.store(record)

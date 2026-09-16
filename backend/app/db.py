@@ -46,6 +46,10 @@ def ensure_database_tables() -> None:
     _migrate_investigations()
     _migrate_investigation_notes()
     _migrate_audit_result_width()
+    _migrate_token_symbol_width()
+    _migrate_numeric_precision()
+    _migrate_risk_criminal_intelligence()
+    _migrate_risk_ml_assessment()
 
 
 def _migrate_investigation_notes() -> None:
@@ -95,6 +99,97 @@ def _migrate_audit_result_width() -> None:
                 text(
                     "ALTER TABLE audit_logs "
                     "ALTER COLUMN result TYPE VARCHAR(255)"
+                )
+            )
+    except Exception:
+        return
+
+
+def _migrate_token_symbol_width() -> None:
+    """Widen the transaction ``token_symbol`` column.
+
+    ``token_symbol`` was originally ``VARCHAR(16)``. Real Ethereum chain data can
+    carry arbitrarily long asset labels (notably phishing ``asset`` names such as
+    ``'Visit LiquidETH.network to claim rewards'``). On live ingestion those rows
+    violated the 16-char limit and ``store_transactions`` raised
+    ``StringDataRightTruncation`` on commit, surfacing as a 500 on
+    ``GET /api/v1/wallets/{address}/transfers``. ``ALTER COLUMN TYPE`` is
+    idempotent so repeated startups are safe; an unreachable database is
+    tolerated (repositories fall back to memory).
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE transactions "
+                    "ALTER COLUMN token_symbol TYPE VARCHAR(255)"
+                )
+            )
+    except Exception:
+        return
+
+
+def _migrate_numeric_precision() -> None:
+    """Widen lossy ``NUMERIC(78, 0)`` columns to 18 decimal places.
+
+    Real Ethereum values are fractional (e.g. ``0.0000369`` ETH). With a scale of
+    ``0`` those values were silently truncated/rounded during live persistence
+    (``12595.3`` became ``12595``, tiny transfers became ``0``), corrupting the
+    ``value`` / ``fee`` / volume fields the API and graph rely on.
+    """
+    target = {
+        "transactions": ["value", "fee"],
+        "wallets": ["incoming_volume", "outgoing_volume", "balance"],
+    }
+    try:
+        with engine.begin() as conn:
+            for table, cols in target.items():
+                for col in cols:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE {table} "
+                            f"ALTER COLUMN {col} TYPE NUMERIC(78, 18)"
+                        )
+                    )
+    except Exception:
+        return
+
+
+def _migrate_risk_criminal_intelligence() -> None:
+    """Add the SEPARATE criminal/sanctions intelligence column to assessments.
+
+    Pre-dates deployments of ``risk_assessments`` predating the criminal
+    intelligence layer. The JSON payload is produced by the risk service from
+    an exact match in the curated public intelligence directory and is kept
+    entirely separate from the analytical risk score. Idempotent (``IF NOT
+    EXISTS``) and tolerant of an unreachable database.
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE risk_assessments "
+                    "ADD COLUMN IF NOT EXISTS criminal_intelligence JSON"
+                )
+            )
+    except Exception:
+        return
+
+
+def _migrate_risk_ml_assessment() -> None:
+    """Add the SEPARATE ML suspicious-wallet block to risk assessments.
+
+    Mirrors the criminal_intelligence column pattern: the ML block (probability,
+    model/dataset version, top features) is stored in its own JSON column so it
+    can never collide with the analytical VASP risk score. Idempotent and
+    tolerant of an unreachable database.
+    """
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE risk_assessments "
+                    "ADD COLUMN IF NOT EXISTS ml_assessment JSON"
                 )
             )
     except Exception:

@@ -87,6 +87,12 @@ QUICK_ACTIONS: List[AssistantQuickAction] = [
         scope="wallet",
     ),
     AssistantQuickAction(
+        id="explain_sanctions",
+        label="Why is this wallet high risk?",
+        description="Criminal/sanctions intelligence from the curated public sanctions/illicit record set.",
+        scope="wallet",
+    ),
+    AssistantQuickAction(
         id="generate_report",
         label="Generate a report",
         description="Reference report sections/ids generated for the case.",
@@ -127,6 +133,7 @@ _INTENT_KEYWORDS: List[Tuple[str, List[str], List[str]]] = [
     ("prepare_referral", ["referral", "disclosure", "sahyog", "lawful", "lodr", "submit"], ["移交", "报案", "司法", "披露"]),
     ("what_changed", ["changed", "what changed", "since last", "diff", "delta"], ["变化", "更新", "差异"]),
     ("compare_wallets", ["compare", "comparison", "versus", "vs", "two wallets"], ["对比", "比较", "两个钱包"]),
+    ("explain_sanctions", ["sanctions", "sanctioned", "criminal", "illicit", "lazarus", "ofac", "why is this wallet high risk", "why is this high risk"], ["制裁", "犯罪", "非法", "高风险"]),
     ("explain_risk", ["risk", "score", "level", "threat", "exposure"], ["风险", "评分", "等级"]),
     ("explain_attribution", ["why", "explain", "reasoning", "justify", "based on"], ["为什么", "解释", "依据", "理由"]),
     ("suspicious_transactions", ["suspicious", "malicious", "large", "flag", "anomal", "wash", "fraud"], ["异常", "可疑", "洗钱", "诈骗", "大额"]),
@@ -213,7 +220,7 @@ class AssistantService:
             )
         elif intent in {"find_vasp", "explain_attribution",
                         "suspicious_transactions", "build_timeline",
-                        "explain_risk", "assist"} and (wallet_address or case_id):
+                        "explain_risk", "explain_sanctions", "assist"} and (wallet_address or case_id):
             sections = self._answer_wallet_intent(
                 intent, request, ctx, record, case_id, wallet_address, user
             )
@@ -283,6 +290,7 @@ class AssistantService:
             "suspicious_transactions": f"Suspicious transaction review ({scope})",
             "build_timeline": f"Chronological timeline ({scope})",
             "explain_risk": f"Risk explanation ({scope})",
+            "explain_sanctions": f"Criminal / sanctions intelligence ({scope})",
             "generate_report": f"Report references ({scope})",
             "prepare_referral": f"Draft referral ({scope})",
             "compare_wallets": "Wallet comparison",
@@ -410,7 +418,24 @@ class AssistantService:
             f"Summary: {risk.summary}",
         ]
         bullets.extend(f"- {line}" for line in risk.reasoning[:8])
-        return [AssistantSection(heading="Analytical risk", bullets=bullets)]
+        sections = [AssistantSection(heading="Analytical risk", bullets=bullets)]
+        if risk.criminal_intelligence:
+            ci = risk.criminal_intelligence
+            sections.append(
+                AssistantSection(
+                    heading="Criminal / Sanctions Intelligence (separate)",
+                    bullets=[
+                        f"Level: {ci.get('level')} · Entity: {ci.get('entity')} "
+                        f"· Source: {ci.get('source')} · Confidence: "
+                        f"{ci.get('confidence')}",
+                        f"Match type: {ci.get('match_type')} · Evidence id: "
+                        f"{ci.get('evidence_id') or 'UNAVAILABLE'}",
+                        "Source: curated public intelligence (not a live OFAC "
+                        "integration). Verify independently.",
+                    ],
+                )
+            )
+        return sections
 
     def _report_references(self, ctx) -> List[AssistantSection]:
         if not ctx.reports:
@@ -553,6 +578,8 @@ class AssistantService:
             return self._build_timeline(address, chain, transfers, evidence)
         if intent == "explain_risk":
             return self._explain_risk(address, chain, risk)
+        if intent == "explain_sanctions":
+            return self._answer_sanctions_intelligence(address, chain, evidence, risk)
         return self._assist_wallet(address, chain, transfers, evidence, risk)
 
     def _find_vasp(
@@ -749,6 +776,76 @@ class AssistantService:
             )
         ]
 
+    def _answer_sanctions_intelligence(self, address, chain, evidence, risk) -> List[AssistantSection]:
+        """Answers "why is this wallet high risk" from PERSISTED evidence."""
+        ci = None
+        if risk is not None:
+            ci = risk.criminal_intelligence or None
+        records = [
+            r
+            for r in (evidence or [])
+            if getattr(r, "evidence_type", None) is not None
+            and r.evidence_type.value == "sanctions_match"
+        ]
+        source = (ci or {}).get("source") or (records[0].source if records else None)
+
+        if not records and ci is None:
+            return [
+                AssistantSection(
+                    heading="Criminal / Sanctions Intelligence",
+                    body=(
+                        "No curated public sanctions/illicit intelligence match "
+                        "is recorded for this wallet."
+                    ),
+                    bullets=[
+                        "Criminal/sanctions level: UNKNOWN / NOT ASSESSED.",
+                        "Absence of a match is not evidence that the wallet is "
+                        "lawful.",
+                        "Sanctions data: CURATED PUBLIC INTELLIGENCE (not a "
+                        "live OFAC integration).",
+                    ],
+                )
+            ]
+
+        entity = (ci or {}).get("entity") or "an associated entity"
+        confidence = (ci or {}).get("confidence") or (
+            records[0].confidence if records else "HIGH"
+        )
+        match_type = (ci or {}).get("match_type", "exact_address")
+        evidence_id = (ci or {}).get("evidence_id") or (
+            records[0].evidence_id if records else None
+        )
+        heading = "Criminal / Sanctions Intelligence"
+        answer = (
+            f"The wallet is marked HIGH RISK because the exact Ethereum "
+            f"address matches a curated public sanctions/illicit intelligence "
+            f"record associated with {entity}. The source is {source}. This is "
+            "an investigative intelligence signal and should be independently "
+            "verified."
+        )
+        bullets = [
+            f"Level: HIGH ({match_type} match)",
+            answer,
+            f"Entity: {entity} · Source: {source} · Confidence: {confidence}",
+            (
+                f"Match type: {match_type} · Evidence id: {evidence_id}"
+                if evidence_id
+                else f"Match type: {match_type}"
+            ),
+            "Provenance: source_type=curated_public_intelligence (persisted "
+            "evidence record).",
+            "Sanctions data: CURATED PUBLIC INTELLIGENCE — not a live OFAC "
+            "integration.",
+            (
+                "This does NOT claim the wallet definitely belongs to "
+                f"{entity}; it means the exact address matches a curated public "
+                f"sanctions/illicit intelligence record associated with {entity}."
+            ),
+        ]
+        return [
+            AssistantSection(heading=heading, body=answer, bullets=bullets)
+        ]
+
     def _explain_risk(self, address, chain, risk) -> List[AssistantSection]:
         if risk is None:
             return [
@@ -762,14 +859,41 @@ class AssistantService:
             ]
         bullets = [
             f"Wallet: {risk.wallet_address} · Chain: {risk.chain}",
-            f"Level: {risk.level} · Score: {risk.risk_score:.0f}/100",
+            f"Level: {risk.level} · Score: {risk.risk_score:.0f}/100 "
+            "(analytical heuristic)",
         ]
         for factor in risk.factors:
             bullets.append(
                 f"- {factor.label}: {factor.detail} (weight {factor.weight:.2f})"
             )
         bullets.extend(f"- {line}" for line in risk.reasoning[:6])
-        return [AssistantSection(heading="Risk explanation", bullets=bullets)]
+        sections = [
+            AssistantSection(heading="Risk explanation", bullets=bullets)
+        ]
+        ci = risk.criminal_intelligence
+        if ci is not None:
+            sections.append(
+                AssistantSection(
+                    heading="Criminal / Sanctions Intelligence (separate)",
+                    body=(
+                        ci.get("reason")
+                        or "Exact address match against curated public "
+                        "sanctions/illicit intelligence."
+                    ),
+                    bullets=[
+                        f"Level: {ci.get('level')} · Entity: {ci.get('entity')} "
+                        f"· Source: {ci.get('source')} · Confidence: "
+                        f"{ci.get('confidence')}",
+                        f"Match type: {ci.get('match_type')} · Evidence id: "
+                        f"{ci.get('evidence_id') or 'UNAVAILABLE'}",
+                        "Source type: curated_public_intelligence (not a live "
+                        "OFAC integration).",
+                        "Investigative intelligence signal; verify "
+                        "independently.",
+                    ],
+                )
+            )
+        return sections
 
     def _assist_wallet(self, address, chain, transfers, evidence, risk) -> List[AssistantSection]:
         inbound = sum(
@@ -778,11 +902,23 @@ class AssistantService:
             if (t.get("to_address") or "").lower() == address.lower()
         )
         outbound = len(transfers) - inbound
+        ci = risk.criminal_intelligence if risk is not None else None
+        if ci is None and evidence:
+            ci = {
+                "level": "high",
+                "entity": [
+                    r for r in evidence
+                    if getattr(r, "evidence_type", None) is not None
+                    and r.evidence_type.value == "sanctions_match"
+                ][0].description,
+            }
+        sanctions_level = "HIGH (exact sanctions/illicit match)" if ci else "UNKNOWN / NOT ASSESSED"
         bullets = [
             f"Wallet: {address} · Chain: {chain}",
             f"Stored transactions: {len(transfers)} ({inbound} in / {outbound} out)",
             f"Evidence records: {len(evidence)}",
             f"Risk: {risk.level if risk else 'UNAVAILABLE'}",
+            f"Criminal/sanctions intelligence: {sanctions_level}",
         ]
         if transfers:
             top = max(transfers, key=_num, default=None)

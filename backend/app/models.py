@@ -37,9 +37,9 @@ class Transaction(Base):
     block_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     from_address: Mapped[str] = mapped_column(String(42))
     to_address: Mapped[str] = mapped_column(String(42))
-    value: Mapped[Decimal] = mapped_column(Numeric(78, 0))
-    fee: Mapped[Optional[Decimal]] = mapped_column(Numeric(78, 0), nullable=True)
-    token_symbol: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    value: Mapped[Decimal] = mapped_column(Numeric(78, 18))
+    fee: Mapped[Optional[Decimal]] = mapped_column(Numeric(78, 18), nullable=True)
+    token_symbol: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -153,9 +153,9 @@ class Wallet(Base):
         DateTime(timezone=True), nullable=True
     )
     transaction_count: Mapped[int] = mapped_column(BigInteger, default=0)
-    incoming_volume: Mapped[Decimal] = mapped_column(Numeric(78, 0), default=0)
-    outgoing_volume: Mapped[Decimal] = mapped_column(Numeric(78, 0), default=0)
-    balance: Mapped[Optional[Decimal]] = mapped_column(Numeric(78, 0), nullable=True)
+    incoming_volume: Mapped[Decimal] = mapped_column(Numeric(78, 18), default=0)
+    outgoing_volume: Mapped[Decimal] = mapped_column(Numeric(78, 18), default=0)
+    balance: Mapped[Optional[Decimal]] = mapped_column(Numeric(78, 18), nullable=True)
     risk: Mapped[str] = mapped_column(String(16), default="unknown")
     risk_score: Mapped[int] = mapped_column(Integer, default=0)
     investigation_status: Mapped[str] = mapped_column(String(32), default="not_analyzed")
@@ -262,6 +262,12 @@ class RiskAssessment(Base):
     risk_score: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=0)
     summary: Mapped[str] = mapped_column(Text, default="")
     factors: Mapped[List] = mapped_column(JSON, default=list)
+    criminal_intelligence: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True
+    )
+    ml_assessment: Mapped[Optional[dict]] = mapped_column(
+        JSON, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
