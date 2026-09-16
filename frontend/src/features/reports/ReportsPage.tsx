@@ -9,9 +9,10 @@ import { wallets } from "@/api/wallets";
 import { attribution } from "@/api/attribution";
 import { evidence } from "@/api/evidence";
 import { reports } from "@/api/reports";
+import { sanctions } from "@/api/intelligence";
 import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
-import type { ReportConfig, ReportSectionKey } from "@/api/types";
+import type { CriminalIntelligence, ReportConfig, ReportSectionKey } from "@/api/types";
 import { validateAddressInput } from "@/lib/address";
 
 export function ReportsPage() {
@@ -29,14 +30,14 @@ export function ReportsPage() {
   const targetValid = target && validateAddressInput(target) === null;
 
   const { data: caseData } = useApi(
-    () => (caseParam ? investigations.get(caseParam) : Promise.resolve(null)),
+    (signal) => (caseParam ? investigations.get(caseParam, signal) : Promise.resolve(null)),
     [caseParam],
   );
 
   // Persisted investigation context. Report previews must reuse the stored
   // analysis instead of triggering a fresh full pipeline run on every open.
   const { data: contextData } = useApi(
-    () => (caseParam ? investigations.context(caseParam) : Promise.resolve(null)),
+    (signal) => (caseParam ? investigations.context(caseParam, signal) : Promise.resolve(null)),
     [caseParam],
   );
 
@@ -50,7 +51,7 @@ export function ReportsPage() {
   );
 
   const { data: transfers } = useApi(
-    () => (walletValid ? wallets.getTransfers(walletAddress, 500).then((r) => r.transfers) : Promise.resolve([])),
+    (signal) => (walletValid ? wallets.getTransfers(walletAddress, 500, {}, signal).then((r) => r.transfers) : Promise.resolve([])),
     [walletAddress, walletValid],
   );
 
@@ -73,6 +74,38 @@ export function ReportsPage() {
     [target, caseParam, isDemo],
   );
   const { data: timeline } = useApi(() => investigations.timeline(), []);
+
+  // SEPARATE criminal/sanctions intelligence for the report's subject wallet.
+  // Absent when there is no exact match in the curated public directory —
+  // rendered as UNKNOWN / NOT ASSESSED, never "not criminal".
+  const { data: sanctionsIntelligence } = useApi<CriminalIntelligence | undefined>(
+    () =>
+      walletValid
+        ? sanctions
+            .lookup(walletAddress, "eth")
+            .then((r) =>
+              r?.matched
+                ? {
+                    level: r.level,
+                    status: "exact_sanctions_match",
+                    entity: r.record?.entity,
+                    source: r.record?.source,
+                    match_type: r.record?.match_type,
+                    confidence: r.record?.confidence,
+                    source_type: r.record?.source_type,
+                    provenance_source_type: r.data_source,
+                    evidence_id: r.record?.record_id,
+                  }
+                : undefined,
+            )
+        : Promise.resolve(undefined),
+    [walletAddress, walletValid],
+  );
+
+  const previewInvestigation = useMemo(
+    () => (caseData ? { ...caseData, criminalIntelligence: sanctionsIntelligence ?? undefined } : null),
+    [caseData, sanctionsIntelligence],
+  );
 
   const toggleSection = (key: ReportSectionKey) => {
     setSections((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
@@ -208,7 +241,7 @@ export function ReportsPage() {
             >
               <ReportPreview
                 config={config}
-                data={{ investigation: caseData, transfers: transfers ?? [], candidates: candidates ?? [], evidence: evidenceItems ?? [], timeline: timeline ?? [] }}
+                data={{ investigation: previewInvestigation, transfers: transfers ?? [], candidates: candidates ?? [], evidence: evidenceItems ?? [], timeline: timeline ?? [] }}
                 mode={isDemo ? "demo" : "live"}
               />
             </Card>

@@ -113,16 +113,19 @@ export function mapPersistedCandidatesToView(
  * falls back to labeled synthetic data only in demo mode.
  */
 export const investigations = {
-  async list(): Promise<Investigation[]> {
+  async list(signal?: AbortSignal): Promise<Investigation[]> {
     if (isDemoMode()) return getDemoInvestigations();
-    const res = await client.get<BackendInvestigationList>("/api/v1/investigations");
+    const res = await client.get<BackendInvestigationList>("/api/v1/investigations", { signal });
     return (res.investigations ?? []).map(mapBackendInvestigationToView);
   },
 
-  async get(id: string): Promise<Investigation | null> {
+  async get(id: string, signal?: AbortSignal): Promise<Investigation | null> {
     if (isDemoMode()) return getDemoInvestigation(id) ?? null;
     try {
-      const res = await client.get<BackendInvestigation>(`/api/v1/investigations/${encodeURIComponent(id)}`);
+      const res = await client.get<BackendInvestigation>(
+        `/api/v1/investigations/${encodeURIComponent(id)}`,
+        { signal },
+      );
       return mapBackendInvestigationToView(res);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) return null;
@@ -135,11 +138,12 @@ export const investigations = {
    * analysis + evidence + risk). In demo mode there is no context endpoint,
    * so this resolves to null and callers fall back to demo adapters.
    */
-  async context(caseId: string): Promise<BackendInvestigationContext | null> {
+  async context(caseId: string, signal?: AbortSignal): Promise<BackendInvestigationContext | null> {
     if (isDemoMode()) return null;
     try {
       return await client.get<BackendInvestigationContext>(
         `/api/v1/investigations/${encodeURIComponent(caseId)}/context`,
+        { signal },
       );
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) return null;
@@ -231,10 +235,11 @@ export const investigations = {
     return mapBackendInvestigationToView(created);
   },
 
-  async notes(caseId: string): Promise<InvestigationNote[]> {
+  async notes(caseId: string, signal?: AbortSignal): Promise<InvestigationNote[]> {
     if (isDemoMode()) return demoNotes;
     const res = await client.get<BackendInvestigationNoteList>(
       `/api/v1/investigations/${encodeURIComponent(caseId)}/notes`,
+      { signal },
     );
     return (res.notes ?? []).map((n) => ({
       id: n.id,

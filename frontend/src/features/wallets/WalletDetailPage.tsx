@@ -4,9 +4,11 @@ import { PageHeader, Button, Card, Badge, DemoBadge, RiskBadge, StatusBadge, Add
 import { TraceIcon, WalletIcon, VaspIcon, EvidenceIcon, ReportIcon } from "@/components/icons";
 import { useApi } from "@/hooks/useApi";
 import { wallets } from "@/api/wallets";
+import { sanctions } from "@/api/intelligence";
+import { risk } from "@/api/risk";
 import { useDataSource } from "@/app/DataSourceContext";
 import { useAuth } from "@/auth/AuthContext";
-import type { WalletSummary } from "@/api/types";
+import type { SanctionsLookup, WalletSummary, MLRiskAssessment } from "@/api/types";
 import { TransferTable } from "@/components/transfers/TransferTable";
 import { TransferDrawer } from "@/components/transfers/TransferDrawer";
 import type { BlockchainTransfer } from "@/api/types";
@@ -41,12 +43,24 @@ export function WalletDetailPage() {
   const [minAmount, setMinAmount] = useState("");
 
   const { data: summary, loading: summaryLoading } = useApi<WalletSummary | null>(() => wallets.getSummary(address), [address]);
+  // SEPARATE criminal/sanctions screen: curated public intelligence only.
+  // Absent (null) means UNKNOWN / NOT ASSESSED — never "not criminal", and the
+  // analytical risk score is never modified by this block.
+  const { data: sanctionsLookup } = useApi<SanctionsLookup | null>(
+    () => sanctions.lookup(address),
+    [address],
+  );
+  // SEPARATE ML suspicious-wallet signal: computed LIVE from real on-chain
+  // transfers. Never a determination of criminality and never merged with the
+  // VASP score or the sanctions block. Honest statuses (trained |
+  // not_trained | unavailable); missing features -> UNKNOWN / NOT ASSESSED.
+  const { data: ml } = useApi<MLRiskAssessment | null>(() => risk.ml(address), [address]);
   const { data: walletData, loading, error, reload } = useApi(
-    () =>
+    (signal) =>
       wallets.getTransfers(address, PAGE_SIZE, {
         offset: page * PAGE_SIZE,
         direction: direction === "all" ? undefined : (direction as "in" | "out"),
-      }),
+      }, signal),
     [address, page, direction],
   );
 
@@ -185,6 +199,156 @@ export function WalletDetailPage() {
           </div>
         </Card>
       </div>
+
+      {/* Criminal / Sanctions Intelligence (SEPARATE from VASP attribution) */}
+      <Card
+        title="Criminal / Sanctions Intelligence"
+        subtitle="CURATED PUBLIC INTELLIGENCE — not a live OFAC integration"
+        actions={
+          sanctionsLookup?.matched ? (
+            <Badge className="risk-critical">Exact address match</Badge>
+          ) : null
+        }
+      >
+        {sanctionsLookup?.matched ? (
+          <div className="stack" style={{ gap: 6 }}>
+            <div className="detail-row">
+              <span className="detail-label">Level</span>
+              <span className="detail-value">
+                <Badge className="risk-high">HIGH</Badge>{" "}
+                <span className="text-dim" style={{ fontSize: "var(--text-sm)" }}>
+                  (exact_address match)
+                </span>
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Entity</span>
+              <span className="detail-value">{sanctionsLookup.record?.entity ?? "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Classification</span>
+              <span className="detail-value">{sanctionsLookup.record?.classification ?? "—"}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Source</span>
+              <span className="detail-value">
+                {sanctionsLookup.record?.source ?? "—"}
+                <span className="text-dim" style={{ fontSize: "var(--text-sm)" }}>
+                  {" "}
+                  · source_type {sanctionsLookup.record?.source_type ?? "—"} · confidence {sanctionsLookup.record?.confidence ?? "—"}
+                </span>
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Evidence id</span>
+              <span className="detail-value mono">{sanctionsLookup.record?.record_id ?? "—"}</span>
+            </div>
+            <p style={{ margin: "8px 0 0", fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>
+              The exact address matches a curated public sanctions/illicit intelligence record associated with{" "}
+              {sanctionsLookup.record?.entity ?? "the listed entity"}. This is an investigative intelligence signal and
+              should be independently verified. Neighbors of this wallet are NOT flagged, and the analytical risk score
+              is unchanged by this block.
+            </p>
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+            No curated public sanctions/illicit intelligence match is recorded for this wallet.
+            <br />
+            Criminal/sanctions level: <strong>UNKNOWN / NOT ASSESSED</strong> — absence of a match is not evidence that
+            the wallet is lawful.
+          </p>
+        )}
+      </Card>
+
+      {/* ML Suspicious-Wallet Probability (SEPARATE from VASP attribution) */}
+      <Card
+        title="ML Suspicious-Wallet Probability"
+        subtitle="SEPARATE from the VASP attribution score and sanctions intelligence — never a determination of criminality"
+        actions={
+          ml?.status === "trained" ? (
+            <Badge className="status-ok">Trained model</Badge>
+          ) : ml?.status === "unavailable" ? (
+            <Badge className="status-warn">UNKNOWN / NOT ASSESSED</Badge>
+          ) : ml?.status === "not_trained" ? (
+            <Badge className="status-draft">Not trained</Badge>
+          ) : (
+            <Badge className="status-draft">NOT ASSESSED</Badge>
+          )
+        }
+      >
+        {ml?.status === "trained" && ml.probability !== null ? (
+          <div className="stack" style={{ gap: 6 }}>
+            <div className="detail-row" style={{ borderBottom: 0, padding: 0 }}>
+              <span className="detail-label">Estimated suspicious activity probability</span>
+              <span className="detail-value">
+                <Badge className={ml.level === "high" ? "risk-high" : "risk-low"}>
+                  {(ml.probability * 100).toFixed(1)}%
+                </Badge>{" "}
+                <span className="text-dim" style={{ fontSize: "var(--text-sm)" }}>
+                  threshold {ml.threshold !== null ? ml.threshold.toFixed(2) : "—"}
+                </span>
+              </span>
+            </div>
+            <div className="detail-row" style={{ borderBottom: 0, padding: 0 }}>
+              <span className="detail-label">Model / dataset</span>
+              <span className="detail-value mono" style={{ fontSize: "var(--text-xs)" }}>
+                {ml.model_version ?? "—"} · {ml.dataset_version ?? "—"}
+              </span>
+            </div>
+            <div style={{ marginTop: 4 }}>
+              <div className="detail-label" style={{ marginBottom: 4 }}>
+                Top contributing features
+              </div>
+              <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                {(ml.top_features ?? []).length > 0 ? (
+                  ml.top_features.slice(0, 5).map((f) => (
+                    <Badge key={f.feature} className="status-neutral">
+                      {f.feature} <span className="mono">({f.gain.toFixed(2)})</span>
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-dim" style={{ fontSize: "var(--text-xs)" }}>
+                    Benefits not recorded for this artifact.
+                  </span>
+                )}
+              </div>
+            </div>
+            <p style={{ margin: "8px 0 0", fontSize: "var(--text-sm)" }}>{ml.wording}</p>
+            <p style={{ margin: "4px 0 0", fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>
+              {ml.disclaimer}
+            </p>
+          </div>
+        ) : ml?.status === "unavailable" ? (
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+            {ml.wording}
+            <br />
+            Required features could not be computed from the on-chain data
+            available for this wallet
+            {ml.missing_features?.length
+              ? ` (missing: ${ml.missing_features.join(", ")})`
+              : ""}
+            . No values were imputed or fabricated.
+          </p>
+        ) : ml?.status === "not_trained" ? (
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+            {ml.wording}
+            <br />
+            No trained suspicious-wallet classifier artifact exists in this
+            deployment. A probability is reported only after a model is genuinely
+            trained and validated on the official Elliptic2 labeled dataset — it
+            is never fabricated for untrained deployments.
+          </p>
+        ) : (
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+            Model-estimated suspicious activity probability:{" "}
+            <strong>UNKNOWN / NOT ASSESSED</strong>.
+            <br />
+            The ML risk signal could not be produced for this wallet right now
+            (no trained model in this deployment, or the blockchain data it needs
+            is temporarily unavailable). It is never fabricated or approximated.
+          </p>
+        )}
+      </Card>
 
       {/* Transfers */}
       <Card

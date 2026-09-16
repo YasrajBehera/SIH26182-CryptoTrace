@@ -1,5 +1,7 @@
 """Tests for the analytical risk assessment module."""
 
+from pathlib import Path
+
 from risk.repository import MemoryRiskRepository
 from risk.service import RiskService
 
@@ -85,6 +87,51 @@ class TestRiskService:
         assert got.level in {"critical", "high"}
 
 
+class TestLiveMLApi:
+    def test_wallet_ml_not_trained_without_artifact(self, app_client, monkeypatch, tmp_path):
+        monkeypatch.setenv("CRYPTOTRACE_MODEL_ROOT", str(tmp_path))
+        resp = app_client.get(f"/api/v1/risk/wallet/{ADDR}/ml")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "not_trained"
+        assert body["probability"] is None
+        assert body["label"] == "UNKNOWN"
+        assert "UNKNOWN / NOT ASSESSED" in body["wording"]
+
+    def test_wallet_ml_full_assessment_shape(self, app_client, monkeypatch, tmp_path):
+        monkeypatch.setenv("CRYPTOTRACE_MODEL_ROOT", str(tmp_path))
+        resp = app_client.get(f"/api/v1/risk/wallet/{ADDR}/ml?chain=eth")
+        body = resp.json()
+        for key in (
+            "status", "probability", "label", "level", "threshold",
+            "required_features", "missing_features", "top_features",
+            "model_version", "dataset_version", "explanation", "wording",
+            "disclaimer",
+        ):
+            assert key in body
+
+    def test_wallet_ml_trained_with_real_joblib(self, app_client, monkeypatch):
+        real_dir = str(
+            Path(__file__).resolve().parents[2] / "backend" / "ml" / "models"
+        )
+        monkeypatch.setenv("CRYPTOTRACE_MODEL_DIR", real_dir)
+        resp = app_client.get(f"/api/v1/risk/wallet/{ADDR}/ml?chain=eth")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "trained"
+        assert body["probability"] is not None and 0.0 <= body["probability"] <= 1.0
+        assert body["model_version"] == "1.0.0"
+        assert "Elliptic2:Bitcoin" in body["dataset_version"]
+        assert "Bitcoin" in body["explanation"]
+        assert "NOT validated for eth" in body["disclaimer"]
+        assert set(body["required_features"]) == {
+            "outgoing_count",
+            "incoming_count",
+            "tx_count",
+            "unique_counterparties",
+        }
+
+
 class TestRiskAPI:
     def test_wallet_risk_404_without_data(self, app_client):
         resp = app_client.get(f"/api/v1/risk/wallet/{ADDR}")
@@ -107,3 +154,45 @@ class TestRiskAPI:
         resp = app_client.get(f"/api/v1/risk/wallet/{ADDR}")
         assert resp.status_code == 200
         assert resp.json()["level"] in {"critical", "high"}
+
+    def test_wallet_risk_readable_with_legacy_chain_spelling(self, app_client):
+        """Regression: a case created with network "ethereum" (a raw client /
+        seed, not the frontend) must not cause GET /risk/wallet?chain=eth to
+        404 even though the risk row exists and was stored under the canonical
+        chain. The backend normalizes the case network AND the lookup so the
+        read-after-write always resolves."""
+        case = app_client.post(
+            "/api/v1/investigations",
+            json={"name": "legacy chain case", "primary_wallet": ADDR, "network": "ethereum"},
+        ).json()
+        assert case["network"] == "eth"
+        app_client.post(
+            f"/api/v1/investigations/{case['id']}/apply-analysis",
+            json={
+                "address": ADDR,
+                "analysis_id": "attr-risk-legacy-chain",
+                "data_source": "live",
+                "candidates": [_candidate("Binance", 88.0, "HIGH", match=100)],
+            },
+        )
+        resp = app_client.get(f"/api/v1/risk/wallet/{ADDR}?chain=eth")
+        assert resp.status_code == 200
+        assert resp.json()["wallet_address"] == ADDR.lower()
+        # The stored row is normalized to the canonical chain identifier, so
+        # both the canonical spelling and the legacy spelling resolve it.
+        legacy = app_client.get(f"/api/v1/risk/wallet/{ADDR}?chain=ethereum")
+        assert legacy.status_code == 200
+
+    def test_risk_repo_accepts_legacy_spelling(self):
+        """The repository lookup itself must be chain-spelling tolerant: a
+        memory row persisted under one spelling is found under the other."""
+        svc = RiskService(repository=MemoryRiskRepository())
+        a = svc.evaluate(
+            address=ADDR,
+            chain="ethereum",
+            candidates=[_candidate("Binance", 55.0)],
+        )
+        svc.persist(a)
+        got = svc.get_for_wallet(ADDR, "eth")
+        assert got is not None
+        assert got.wallet_address == ADDR.lower()

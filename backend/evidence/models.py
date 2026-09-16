@@ -10,6 +10,8 @@ class EvidenceType(str, Enum):
     TEMPORAL_CONSISTENCY = "temporal_consistency"
     TRANSACTION_FLOW = "transaction_flow"
     CLUSTER_EVIDENCE = "cluster_evidence"
+    SANCTIONS_MATCH = "sanctions_match"
+    ML_PREDICTION = "ml_prediction"
 
 
 class Provenance(BaseModel):
@@ -17,6 +19,9 @@ class Provenance(BaseModel):
     created_by: str = "attribution_engine"
     method: str
     version: str = "0.1.0"
+    source_type: Optional[str] = None
+    model_version: Optional[str] = None
+    dataset_version: Optional[str] = None
 
 
 class EvidenceRecord(BaseModel):

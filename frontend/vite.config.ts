@@ -28,6 +28,12 @@ export default defineConfig(({ mode }) => {
     preview: {
       port: 4173,
       host: true,
+      proxy: {
+        "/api": {
+          target: proxyTarget,
+          changeOrigin: true,
+        },
+      },
     },
     test: {
       environment: "jsdom",

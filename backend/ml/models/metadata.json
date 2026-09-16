@@ -1,0 +1,65 @@
+{
+  "model_name": "CryptoTrace Suspicious Wallet Risk Classifier",
+  "model_version": "1.0.0",
+  "algorithm": "LightGBM",
+  "task": "binary classification",
+  "dataset": {
+    "name": "Elliptic2",
+    "source": "Kaggle: ellipticco/elliptic2-data-set",
+    "license": "CC BY-NC-ND 4.0",
+    "chain": "Bitcoin",
+    "label_source": "connected_components.csv",
+    "label_column": "ccLabel",
+    "labels": {
+      "licit": 0,
+      "suspicious": 1
+    }
+  },
+  "features": [
+    "outgoing_count",
+    "incoming_count",
+    "tx_count",
+    "unique_counterparties"
+  ],
+  "split": {
+    "train": 0.7,
+    "validation": 0.15,
+    "test": 0.15,
+    "strategy": "stratified",
+    "random_state": 42
+  },
+  "class_imbalance": {
+    "scale_pos_weight": 41.473928473928474
+  },
+  "threshold": {
+    "value": 0.05,
+    "selected_using": "validation_set_only"
+  },
+  "evaluation": {
+    "precision": 0.023689692398923472,
+    "recall": 0.9923566878980892,
+    "f1": 0.04627470781294088,
+    "roc_auc": 0.5276021063355492,
+    "pr_auc": 0.02510902714259043,
+    "confusion_matrix": [
+      [
+        900,
+        64209
+      ],
+      [
+        12,
+        1558
+      ]
+    ]
+  },
+  "training_rows": 311164,
+  "validation_rows": 66678,
+  "test_rows": 66679,
+  "created_at_utc": "2026-09-15T07:06:19.315760+00:00",
+  "live_inference_policy": {
+    "train_on_target_wallet": false,
+    "synthetic_live_features": false,
+    "missing_required_features": "UNKNOWN",
+    "criminality_claim": false
+  }
+}

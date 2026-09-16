@@ -13,7 +13,7 @@ export function CasesPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { can } = useAuth();
-  const { data, loading, error, reload } = useApi(() => investigations.list(), []);
+  const { data, loading, error, reload } = useApi((signal) => investigations.list(signal), []);
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>(params.get("status") ?? "all");

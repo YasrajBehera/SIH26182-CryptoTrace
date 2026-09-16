@@ -10,7 +10,8 @@ export const REPORT_SECTION_LABELS: Record<ReportSectionKey, string> = {
   transaction_analysis: "Transaction Analysis",
   fund_flow: "Fund Flow",
   graph_analysis: "Graph Analysis",
-  vasp_candidates: "VASP Candidates",
+  vasp_candidates: "VASP Attribution",
+  criminal_sanctions_intelligence: "Criminal / Sanctions Intelligence",
   evidence: "Evidence",
   risk_assessment: "Risk Assessment",
   analyst_notes: "Analyst Notes",
@@ -227,6 +228,47 @@ export function ReportPreview({
           )}
           <p style={{ fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>
             All candidates are potential associations; verified ownership requires independent backend evidence.
+          </p>
+        </section>
+      ) : null}
+
+      {has("criminal_sanctions_intelligence") ? (
+        <section className="report-section">
+          <h2>Criminal / Sanctions Intelligence</h2>
+          <p>
+            This block reports the curated public sanctions/illicit intelligence check for the subject address. It is
+            a SEPARATE layer from VASP attribution: the analytical risk score is never modified by this block, and only
+            an exact address match against the curated directory sets the level to HIGH.
+          </p>
+          <ReportTable
+            rows={[
+              [
+                "Status",
+                data.investigation?.criminalIntelligence
+                  ? `HIGH — ${data.investigation.criminalIntelligence.match_type ?? "exact_address"} match`
+                  : "UNKNOWN / NOT ASSESSED",
+              ],
+              [
+                "Entity",
+                data.investigation?.criminalIntelligence?.entity ?? "—",
+              ],
+              [
+                "Source",
+                data.investigation?.criminalIntelligence?.source ?? "—",
+              ],
+              [
+                "Confidence",
+                data.investigation?.criminalIntelligence?.confidence ?? "—",
+              ],
+              [
+                "Evidence id",
+                data.investigation?.criminalIntelligence?.evidence_id ?? "—",
+              ],
+            ]}
+          />
+          <p style={{ fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>
+            Sanctions data: CURATED PUBLIC INTELLIGENCE — not a live OFAC integration. Absence of a match is not
+            evidence that the wallet is lawful. Neighbors of a matched address are never marked.
           </p>
         </section>
       ) : null}

@@ -17,8 +17,8 @@ export function CaseDetailPage() {
   const { isDemo } = useDataSource();
   const { user, can } = useAuth();
 
-  const { data: investigation, loading, error, reload } = useApi(() => (id ? investigations.get(id) : Promise.resolve(null)), [id]);
-  const { data: notes, reload: reloadNotes } = useApi<InvestigationNote[]>(() => (id ? investigations.notes(id) : Promise.resolve([])), [id]);
+  const { data: investigation, loading, error, reload } = useApi((signal) => (id ? investigations.get(id, signal) : Promise.resolve(null)), [id]);
+  const { data: notes, reload: reloadNotes } = useApi<InvestigationNote[]>((signal) => (id ? investigations.notes(id, signal) : Promise.resolve([])), [id]);
   const { data: timeline } = useApi(() => investigations.timeline(), []);
 
   const [tab, setTab] = useState("overview");

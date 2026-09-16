@@ -50,7 +50,7 @@ describe("investigation notes (live mode)", () => {
 
     const notes = await investigations.notes("CT-1");
 
-    expect(getMock).toHaveBeenCalledWith("/api/v1/investigations/CT-1/notes");
+    expect(getMock).toHaveBeenCalledWith("/api/v1/investigations/CT-1/notes", { signal: undefined });
     expect(notes).toEqual([
       { id: "note-1", author: "Rohan", body: "Trail observed", createdAt: "2026-09-10T08:00:00Z" },
     ]);

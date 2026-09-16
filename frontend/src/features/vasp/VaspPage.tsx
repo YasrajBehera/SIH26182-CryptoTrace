@@ -26,7 +26,7 @@ export function VaspPage() {
   // and never a generic directory listing. Without a case it computes fresh
   // behavioral candidates for the queried wallet.
   const { data: context, loading: contextLoading, error: contextError, reload: reloadContext } = useApi(
-    () => (caseId ? investigations.context(caseId) : Promise.resolve(null)),
+    (signal) => (caseId ? investigations.context(caseId, signal) : Promise.resolve(null)),
     [caseId],
   );
   const { data: candidates, loading, error, reload } = useApi(

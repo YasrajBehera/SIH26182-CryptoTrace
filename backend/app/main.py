@@ -184,7 +184,7 @@ def health():
 
 
 @app.get("/api/v1/system/status")
-def system_status(_current_user=Depends(get_current_user)) -> dict:
+async def system_status(_current_user=Depends(get_current_user)) -> dict:
     """Authenticated per-component availability for the dashboard status card.
 
     Each entry is a plain boolean resolved from a cheap live check at request
@@ -193,7 +193,7 @@ def system_status(_current_user=Depends(get_current_user)) -> dict:
     - backend:    this process is serving the request
     - auth:       a valid session token was presented
     - postgres:   the configured database is reachable
-    - blockchain: an Alchemy provider key is configured
+    - blockchain: the Alchemy provider answered a live eth_blockNumber probe
     - neo4j:      the graph database is reachable
     - graph:      mirrors neo4j (the graph engine runs on Neo4j)
     - vasp:       attribution engine (curated public directory)
@@ -224,11 +224,18 @@ def system_status(_current_user=Depends(get_current_user)) -> dict:
     except Exception:
         report_ok = False
 
+    # The blockchain slot reflects a live provider answer (or False when the
+    # key is absent/expired/unreachable) — never mere key presence.
+    try:
+        blockchain_ok = await service.provider_health()
+    except Exception:
+        blockchain_ok = False
+
     return {
         "backend": True,
         "auth": True,
         "postgres": database_available(),
-        "blockchain": bool(_settings.alchemy_api_key or os.environ.get("ALCHEMY_API_KEY", "")),
+        "blockchain": blockchain_ok,
         "neo4j": graph_ok,
         "graph": graph_ok,
         "vasp": True,

@@ -94,6 +94,10 @@ export interface Investigation {
   createdAt: string;
   updatedAt: string;
   tags: string[];
+  /** SEPARATE curated sanctions/illicit intelligence block. Absent (undefined)
+   *  means UNKNOWN / NOT ASSESSED — never "not criminal". This block never
+   *  modifies the analytical risk fields above. */
+  criminalIntelligence?: CriminalIntelligence;
   isDemo?: boolean;
 }
 
@@ -137,6 +141,22 @@ export interface BackendInvestigationList {
   source: string;
 }
 
+export interface MLRiskAssessment {
+  status: "trained" | "not_trained" | "unavailable";
+  probability: number | null;
+  label: string;
+  level: string;
+  threshold: number | null;
+  required_features: string[];
+  missing_features: string[];
+  top_features: Array<{ feature: string; gain: number }>;
+  model_version: string | null;
+  dataset_version: string | null;
+  explanation: string;
+  wording: string;
+  disclaimer: string;
+}
+
 export interface BackendRiskAssessment {
   investigation_id: string | null;
   wallet_address: string;
@@ -149,6 +169,8 @@ export interface BackendRiskAssessment {
   data_source: string;
   disclaimer: string;
   created_at: string;
+  criminal_intelligence?: Record<string, unknown> | null;
+  ml_assessment?: MLRiskAssessment | null;
 }
 
 export interface InvestigationNote {
@@ -310,6 +332,51 @@ export interface AttributionCandidate {
   reasoning: string;
   factors: AttributionFactor[];
   isDemo?: boolean;
+}
+
+/* ---- Criminal / Sanctions Intelligence (curated public intelligence) ---- *
+ * This layer is SEPARATE from VASP attribution. Only an EXACT address match
+ * against the curated public sanctions/illicit directory elevates
+ * CriminalIntelligence.level to "high". No neighbor is ever flagged and the
+ * analytical risk score is never modified by this block. */
+
+export interface SanctionsIntelligenceRecord {
+  record_id: string;
+  chain: string;
+  address: string;
+  entity: string;
+  classification: "sanctioned" | "illicit" | string;
+  source: string;
+  match_type: "exact_address" | string;
+  confidence: string;
+  source_type: string;
+  reference?: string | null;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface SanctionsLookup {
+  address: string;
+  chain: string;
+  matched: boolean;
+  level: "high" | "unknown" | string;
+  data_source: string;
+  record: SanctionsIntelligenceRecord | null;
+}
+
+export interface CriminalIntelligence {
+  level: string;
+  status: string;
+  reason?: string;
+  entity?: string;
+  source?: string;
+  source_type?: string;
+  match_type?: string;
+  confidence?: string;
+  provenance_source_type?: string;
+  evidence_id?: string;
+  signals?: string[];
+  disclaimer?: string;
 }
 
 /* ---- Evidence / provenance (Member 3 integration contract) ---- */
@@ -538,6 +605,7 @@ export type ReportSectionKey =
   | "fund_flow"
   | "graph_analysis"
   | "vasp_candidates"
+  | "criminal_sanctions_intelligence"
   | "evidence"
   | "risk_assessment"
   | "analyst_notes"

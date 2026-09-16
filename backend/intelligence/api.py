@@ -1,11 +1,15 @@
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
+from app.auth.deps import require_permission
 from intelligence.models import AddressIntelligence
+from intelligence.sanctions_models import SanctionsLookup
+from intelligence.sanctions_service import SanctionsIntelligenceService
 from intelligence.service import VASPIntelligenceService
 
 router = APIRouter(prefix="/api/v1/intelligence", tags=["intelligence"])
 
 _service = VASPIntelligenceService()
+_sanctions = SanctionsIntelligenceService()
 
 
 @router.get(
@@ -24,6 +28,30 @@ def get_address_intelligence(
     ),
 ):
     return _service.lookup_address(address.lower(), chain, data_source=data_source)
+
+
+@router.get(
+    "/sanctions/address/{address}",
+    response_model=SanctionsLookup,
+    responses={
+        200: {"description": "Criminal/sanctions intelligence lookup"},
+        401: {"description": "Authentication required"},
+        403: {"description": "Insufficient permissions"},
+    },
+)
+def sanctions_lookup(
+    address: str = Path(..., description="Wallet address to screen"),
+    chain: str = Query("eth", description="Blockchain chain"),
+    _current_user=Depends(require_permission("attribution.read")),
+):
+    """Screen an address against the CURATED PUBLIC sanctions/illicit
+    directory.
+
+    This is curated public intelligence, NOT a live OFAC integration. Only an
+    exact address match returns ``level: high``; anything else returns
+    ``level: unknown`` (NOT ASSESSED — never "not criminal").
+    """
+    return _sanctions.lookup_result(address.lower(), chain)
 
 
 @router.get("/vasp/names")

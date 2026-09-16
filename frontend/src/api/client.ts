@@ -76,19 +76,23 @@ export interface BlobResult {
   headers: Headers;
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, query, timeoutMs = 30000, headers, asBlob, signal } = options;
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+/**
+ * In-flight GET de-duplication.
+ *
+ * Identical GETs that start while an earlier request to the same URL is still
+ * pending share the first promise instead of opening a second network request.
+ * This stops StrictMode double-mounts and sibling components (e.g. two pages
+ * both calling GET /api/v1/investigations on mount) from hammering the same
+ * endpoint. POST/mutating calls are never shared.
+ */
+const inFlight = new Map<string, Promise<unknown>>();
 
-  // Bridge an external abort signal (component unmount/teardown) into the
-  // per-request controller so aborted fetches are cut off at the network layer.
-  const onExternalAbort = () => controller.abort();
-  if (signal) {
-    if (signal.aborted) controller.abort();
-    else signal.addEventListener("abort", onExternalAbort, { once: true });
-  }
+function dedupKey(method: string, url: string): string {
+  return `${method} ${url}`;
+}
 
+/** Build the final request URL from the path + query options. */
+function buildUrl(path: string, query?: RequestOptions["query"]): string {
   let url = `${API_BASE}${path}`;
   if (query) {
     const params = new URLSearchParams();
@@ -99,6 +103,22 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
     const qs = params.toString();
     if (qs) url += `?${qs}`;
+  }
+  return url;
+}
+
+/** Perform a single fetch, honoring timeout + external abort signal. */
+async function fetchOnce<T>(url: string, options: RequestOptions): Promise<T> {
+  const { method = "GET", body, timeoutMs = 30000, headers, asBlob, signal } = options;
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  // Bridge an external abort signal (component unmount/teardown) into the
+  // per-request controller so aborted fetches are cut off at the network layer.
+  const onExternalAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", onExternalAbort, { once: true });
   }
 
   try {
@@ -150,7 +170,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new ApiError("The request timed out.", { code: "timeout", status: 408 });
     }
-    logger.warn("API request failed", { path, method, error: String(err) });
+    logger.warn("API request failed", { url, method, error: String(err) });
     throw new ApiError("The service could not be reached. Check your connection and try again.", {
       code: "network",
     });
@@ -158,6 +178,32 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (signal) signal.removeEventListener("abort", onExternalAbort);
     window.clearTimeout(timer);
   }
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = "GET", query } = options;
+  const url = buildUrl(path, query);
+
+  // De-duplicate in-flight GETs to the exact same URL so React.StrictMode's
+  // double-mount and sibling components don't each fire a duplicate request.
+  // The shared promise is cleared when it settles; aborting one caller only
+  // cancels that caller's own subscription, never the shared fetch.
+  if (method === "GET") {
+    const key = dedupKey(method, url);
+    const pending = inFlight.get(key);
+    if (pending) return pending as Promise<T>;
+    const started = fetchOnce<T>(url, options);
+    inFlight.set(key, started);
+    // Clear the shared slot when the request settles. `.then(ok, err)` (not
+    // `.finally()`) so a failing GET doesn't leave an unhandled derived
+    // rejection behind: both callbacks resolve the derived promise.
+    void started.then(
+      () => inFlight.delete(key),
+      () => inFlight.delete(key),
+    );
+    return started;
+  }
+  return fetchOnce<T>(url, options);
 }
 
 export const client = {
