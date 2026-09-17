@@ -30,6 +30,7 @@ export default defineConfig(({ mode }) => {
   host: true,
   allowedHosts: [
     "innovative-presence-production-90fa.up.railway.app",
+    "innovative-presence-production-a184.up.railway.app",
   ],
   proxy: {
     "/api": {
