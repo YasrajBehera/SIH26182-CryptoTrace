@@ -26,15 +26,18 @@ export default defineConfig(({ mode }) => {
       },
     },
     preview: {
-      port: 4173,
-      host: true,
-      proxy: {
-        "/api": {
-          target: proxyTarget,
-          changeOrigin: true,
-        },
-      },
+  port: 4173,
+  host: true,
+  allowedHosts: [
+    "innovative-presence-production-90fa.up.railway.app",
+  ],
+  proxy: {
+    "/api": {
+      target: proxyTarget,
+      changeOrigin: true,
     },
+  },
+},
     test: {
       environment: "jsdom",
       globals: true,
