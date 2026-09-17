@@ -35,7 +35,7 @@ class TransactionGraph:
 
     @classmethod
     def from_transactions(
-        cls, transactions: Iterable[Transaction]
+        cls, transactions: Iterable["Transaction"]
     ) -> "TransactionGraph":
         graph = cls()
         for tx in transactions:
