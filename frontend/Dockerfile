@@ -12,6 +12,5 @@ ENV VITE_API_PROXY_TARGET=${VITE_API_PROXY_TARGET}
 
 RUN npm run build
 
-EXPOSE 4173
-
-CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "4173"]
+EXPOSE 8000
+CMD ["sh", "-c", "npm run preview -- --host 0.0.0.0 --port ${PORT:-8000}"]
