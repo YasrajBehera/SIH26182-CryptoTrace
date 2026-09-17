@@ -139,6 +139,15 @@ class TemporalPathResponse(BaseModel):
     found: bool = False
 
 
+class FundFlowTransaction(BaseModel):
+    tx_hash: str
+    chain: str
+    sender: str
+    receiver: str
+    amount: str
+    timestamp: int
+
+
 class FundFlowResponse(BaseModel):
     source: str
     destination: str
@@ -146,22 +155,6 @@ class FundFlowResponse(BaseModel):
     hop_count: Optional[int] = None
     transactions: List[FundFlowTransaction] = Field(default_factory=list)
     found: bool = False
-
-
-class FundFlowTransaction(BaseModel):
-
-    tx_hash: str
-
-    chain: str
-
-    sender: str
-
-    receiver: str
-
-    amount: str
-
-    timestamp: int
-
 
 
 class TemporalFlowResponse(BaseModel):
