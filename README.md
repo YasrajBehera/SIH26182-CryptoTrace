@@ -38,34 +38,30 @@
 ## 🏗️ System Architecture
 
 text
-                    ┌──────────────────────┐
-                    │   Investigator UI    │
-                    │ React + TypeScript   │
-                    └──────────┬───────────┘
+                    
+                                       ┌─────────────────────┐
+                    │   CryptoTrace UI    │
+                    │ React + TypeScript  │
+                    └──────────┬──────────┘
                                │
                                ▼
-                    ┌──────────────────────┐
-                    │     FastAPI API      │
-                    │   Gateway / Services  │
-                    └──────────┬───────────┘
-                               │
-          ┌────────────────────┼────────────────────┐
-          ▼                    ▼                    ▼
-     Blockchain             Graph               Intelligence
-       Alchemy              Neo4j               VASP Engine
-          │                    │                    │
-          └────────────────────┼────────────────────┘
-                               ▼
-                    ┌──────────────────────┐
-                    │ Evidence / Risk /    │
-                    │ Reports / Audit      │
-                    └──────────┬───────────┘
-                               ▼
-                    ┌──────────────────────┐
-                    │     PostgreSQL       │
-                    │ Cases / Notes / Logs │
-                    └──────────────────────┘
-
+                    ┌─────────────────────┐
+                    │    FastAPI Backend  │
+                    │       Render        │
+                    └──────┬───────┬──────┘
+                           │       │
+              ┌────────────┘       └─────────────┐
+              ▼                                  ▼
+       ┌──────────────┐                  ┌──────────────┐
+       │    Neon      │                  │ Neo4j AuraDB │
+       │  PostgreSQL  │                  │    Graph     │
+       └──────────────┘                  └──────────────┘
+                           │
+                           ▼
+                    ┌──────────────┐
+                    │    Alchemy   │
+                    │ Ethereum API │
+                    └──────────────┘
 ## 🛠️ Technology Stack
 
 | Layer | Technology |
