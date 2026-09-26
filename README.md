@@ -38,7 +38,7 @@
 ## 🏗️ System Architecture
 
 text
-                    
+                
                     ┌─────────────────────┐
                     │   CryptoTrace UI    │
                     │ React + TypeScript  │
