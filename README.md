@@ -1,3 +1,124 @@
+# 🔍 CryptoTrace
+
+### Smart India Hackathon 2026 • Problem Statement 26182
+
+> **Automated Attribution of Unknown Cryptocurrency Wallets to Nearest Virtual Asset Service Providers through Blockchain Intelligence APIs**
+
+**Unknown Wallet → Blockchain Transactions → Transaction Graph → VASP Candidate Ranking → Evidence → Risk → Investigation Report**
+
+[🚀 Live Demo](https://innovative-presence-production-90fa.up.railway.app)  
+[🎥 Demo Video](https://youtu.be/P_f_5ufgG7w)  
+[💻 Source Code](https://github.com/YasrajBehera/SIH26182-CryptoTrace)
+
+**Team:** The Dynamic Innovator
+## 🎥 Demo
+
+### 🎙️ Narrated Demo
+[Watch the narrated demo](https://youtu.be/xp3hxlscSh4)
+## 🚀 Key Capabilities
+
+- 🔗 **Live Ethereum Blockchain Ingestion** using Alchemy
+- 🕸️ **Transaction Graph Investigation** using Neo4j and NetworkX
+- 🔎 **BFS, DFS and Shortest-Path Analysis**
+- 💸 **Fund-Flow Reconstruction**
+- 🏢 **VASP Intelligence and Candidate Attribution**
+- 🎯 **Evidence-backed deterministic attribution scoring**
+- 🧾 **Evidence provenance and investigation records**
+- 📋 **Persistent investigation cases and case notes**
+- ⚠️ **Risk assessment and suspicious-wallet signals**
+- 🤖 **Evidence-grounded Investigator Assistant**
+- 📄 **Investigation report generation and PDF export**
+- 🔐 **JWT authentication and role-based access control**
+- 📜 **Auditable investigator activity logs**
+- 🔍 **Global investigation search**
+- 💰 **ETH/USD value estimation**
+
+
+## 🏗️ System Architecture
+
+text
+                    ┌──────────────────────┐
+                    │   Investigator UI    │
+                    │ React + TypeScript   │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │     FastAPI API      │
+                    │   Gateway / Services  │
+                    └──────────┬───────────┘
+                               │
+          ┌────────────────────┼────────────────────┐
+          ▼                    ▼                    ▼
+     Blockchain             Graph               Intelligence
+       Alchemy              Neo4j               VASP Engine
+          │                    │                    │
+          └────────────────────┼────────────────────┘
+                               ▼
+                    ┌──────────────────────┐
+                    │ Evidence / Risk /    │
+                    │ Reports / Audit      │
+                    └──────────┬───────────┘
+                               ▼
+                    ┌──────────────────────┐
+                    │     PostgreSQL       │
+                    │ Cases / Notes / Logs │
+                    └──────────────────────┘
+
+## 🛠️ Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React, TypeScript, Tailwind CSS |
+| Backend | Python, FastAPI |
+| Blockchain | Ethereum, Alchemy |
+| Graph | Neo4j, NetworkX |
+| Database | PostgreSQL |
+| Attribution | Deterministic scoring engine |
+| ML Signal | LightGBM / Elliptic2 |
+| Authentication | JWT + RBAC |
+| Reports | PDF generation |
+| Deployment | Railway |
+
+## 🧪 Testing
+
+The repository includes automated backend and frontend test suites covering core investigation, attribution, graph, evidence, API, and UI functionality.
+
+The current repository documents:
+
+- **498 backend tests passing**
+- **94 frontend tests passing**
+- Frontend typecheck/build validation
+- Lint validation
+
+
+
+
+## ⚠️ Data & Prototype Transparency
+
+CryptoTrace clearly distinguishes between live and demonstration data.
+
+- **Live blockchain ingestion:** Ethereum transaction data through Alchemy.
+- **Graph analysis:** Neo4j-backed transaction relationship analysis.
+- **VASP attribution:** Current prototype uses a deterministic analytical scoring approach.
+- **VASP intelligence dataset:** Synthetic/demo intelligence is used where real-world ownership validation is unavailable.
+- **ML suspicious-wallet signal:** The current model is based on the Elliptic2 Bitcoin-focused dataset and should not be interpreted as Ethereum-validated detection.
+- **SAHYOG:** Demonstrated as a draft/integration workflow and does not represent live submission to I4C/NCRP.
+- **Attribution output:** Candidate rankings support investigative leads and do not establish wallet ownership.
+
+## 🔗 Project Links
+
+| Resource | Link |
+|---|---|
+| 🚀 Live Prototype | https://innovative-presence-production-90fa.up.railway.app |
+| 🎥 Original Demo | https://youtu.be/P_f_5ufgG7w |
+| 💻 GitHub | https://github.com/YasrajBehera/SIH26182-CryptoTrace |
+| 🌐 Ethereum | https://ethereum.org |
+| 🕸️ Neo4j Documentation | https://neo4j.com/docs/ |
+| ⚡ Alchemy Documentation | https://www.alchemy.com/docs |
+
+
+
 # SIH26182-CryptoTrace
 
 Explainable cross-chain VASP attribution and blockchain investigation platform for SIH26182.
