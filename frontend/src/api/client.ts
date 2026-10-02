@@ -17,7 +17,11 @@ import { clearToken, getToken } from "@/auth/tokenStore";
 
 const SESSION_EXPIRED_EVENT = "cryptotrace:unauthorized";
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "";// same origin; vite proxy handles /api
+
+
+
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+
 
 export interface ApiErrorBody {
   detail?: string;
