@@ -18,11 +18,20 @@ const CHAIN_NAME: Record<string, string> = {
   "eth-mainnet": "Ethereum Mainnet",
   goerli: "Ethereum Goerli",
   sepolia: "Ethereum Sepolia",
+  ronin: "Ronin",
+  "ronin-mainnet": "Ronin",
+  bsc: "BNB Smart Chain",
+  polygon: "Polygon",
 };
 
+/**
+ * Human name for a chain id. Aliases collapse onto the same label so a result
+ * that arrived as "ronin-mainnet" is never presented as a different network
+ * than one that arrived as "ronin".
+ */
 export function chainLabel(chain?: string | null): string {
   if (!chain) return "Unknown network";
-  return CHAIN_NAME[chain] ?? chain;
+  return CHAIN_NAME[chain] ?? CHAIN_NAME[chain.toLowerCase()] ?? chain;
 }
 
 /**

@@ -16,6 +16,17 @@ class TransactionEdge:
     receiver: str
     amount: Decimal
     timestamp: int
+    #: Asset symbol the value moved in (e.g. ``RON``, ``USDT``, ``ETH``).
+    #: Optional: rows without one degrade to ``""`` rather than a guess.
+    asset: str = ""
+
+    def direction_from(self, wallet_id: str) -> str:
+        """``"in"``/``"out"`` relative to ``wallet_id``, ``""`` if unrelated."""
+        if self.receiver == wallet_id:
+            return "in"
+        if self.sender == wallet_id:
+            return "out"
+        return ""
 
 
 def hop_weight(edge: TransactionEdge) -> float:
@@ -74,6 +85,7 @@ class TransactionGraph:
             timestamp = block_timestamp
         else:
             timestamp = int(block_timestamp.timestamp())
+        asset = self._field(tx, "asset") or self._field(tx, "token_symbol") or ""
         self.add_edge(
             chain=chain,
             tx_hash=tx_hash,
@@ -81,6 +93,7 @@ class TransactionGraph:
             receiver_address=to_address,
             amount=amount,
             timestamp=timestamp,
+            asset=asset,
         )
 
     @staticmethod
@@ -97,6 +110,7 @@ class TransactionGraph:
         receiver_address: str,
         amount: Decimal,
         timestamp: int,
+        asset: str = "",
     ) -> None:
         dedupe_key = (chain, tx_hash.lower())
         if dedupe_key in self._edges:
@@ -120,6 +134,7 @@ class TransactionGraph:
             receiver=receiver,
             amount=amount,
             timestamp=int(timestamp),
+            asset=asset or "",
         )
         self._edges[dedupe_key] = edge
         self._out.setdefault(sender, []).append(edge)
@@ -365,6 +380,7 @@ class TransactionGraph:
                     "receiver": edge.receiver,
                     "amount": str(edge.amount),
                     "timestamp": edge.timestamp,
+                    "asset": edge.asset,
                 }
                 for edge in self.edges
             ],

@@ -186,6 +186,19 @@ class TestScoreTransactionFlow:
         score, _ = scorer.score_transaction_flow("0x1", "eth", None)
         assert score == 0.0
 
+    def test_empty_graph_is_absence_of_evidence_not_a_weak_pattern(self, scorer):
+        """A wallet whose live fetch returned nothing must not score positive.
+
+        This scored 15.0 ("few counterparties (0)") purely because the counterparty
+        tiers had no "zero" case, which fabricated an exchange-like signal and let
+        an empty investigation produce ranked candidates and evidence records.
+        """
+        score, explanations = scorer.score_transaction_flow(
+            "0x1234", "eth", {"neighbors": [], "flows": []}
+        )
+        assert score == 0.0
+        assert any("No transaction activity" in e for e in explanations)
+
     def test_many_counterparties(self, scorer):
         wallet_id = "eth:0x1234"
         neighbors = [{"wallet_id": f"eth:0x{i:040x}"} for i in range(25)]
@@ -429,6 +442,19 @@ class TestCandidateFiltering:
         assert placeholder.confidence == Confidence.LOW
         assert placeholder.evidence_ids == []
         assert "No VASP candidates found" in " ".join(placeholder.explanation)
+
+    def test_empty_graph_creates_no_evidence_records(self, attr_service):
+        """A live investigation that ingested zero transfers must not mint
+        evidence records describing a flow pattern that was never observed."""
+        request = AttributionRequest(
+            address="0xdead000000000000000000000000000000000001",
+            chain="ronin",
+            graph_data={"neighbors": [], "flows": [], "path": None},
+        )
+        response = attr_service.analyze(request, data_source="live")
+        assert all(not c.evidence_ids for c in response.candidates)
+        assert all(c.score == 0.0 for c in response.candidates)
+        assert [c.vasp_name for c in response.candidates] == ["UNKNOWN"]
 
     def test_positive_score_candidates_survive_filter(self, attr_service):
         request = AttributionRequest(

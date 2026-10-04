@@ -11,6 +11,7 @@ export const demoCandidates: AttributionCandidate[] = [
   {
     id: "cand-1",
     wallet: "0x7c5bd5c9cde06b8c998a6a66dbdc2e9e8e2f4b13",
+    chain: "eth",
     vaspName: "StakingPool.io",
     confidenceLevel: "medium",
     confidenceScore: null,
@@ -66,6 +67,7 @@ export const demoCandidates: AttributionCandidate[] = [
   {
     id: "cand-2",
     wallet: "0xa1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4",
+    chain: "eth",
     vaspName: "Proton Exchange",
     confidenceLevel: "low",
     confidenceScore: null,
@@ -102,6 +104,7 @@ export const demoCandidates: AttributionCandidate[] = [
   {
     id: "cand-3",
     wallet: "0xdeadbeef00112233445566778899aabbccddeeff",
+    chain: "eth",
     vaspName: "Unknown — Mixing service signal",
     confidenceLevel: "unknown",
     confidenceScore: null,
@@ -165,6 +168,12 @@ export function getDemoInvestigationAnalysis(address: string): InvestigationAnal
     isDemo: true,
     dataSource: "demo",
     syntheticTransactions: true,
+    status: "DEMO",
+    provider: "synthetic",
+    liveStatus: "",
+    limitations: [
+      "Synthetic demo data generated in the browser. It is not real chain activity and proves nothing about this wallet.",
+    ],
     intelligence: null,
     candidates: demoCandidates.map((c, i) => ({
       ...c,

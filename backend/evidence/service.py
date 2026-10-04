@@ -36,6 +36,8 @@ class EvidenceService:
         source_type: str | None = None,
         model_version: str | None = None,
         dataset_version: str | None = None,
+        matched_address: str | None = None,
+        limitations: List[str] | None = None,
     ) -> EvidenceRecord:
         record = EvidenceRecord(
             evidence_id=evidence_id or f"ev-{uuid.uuid4().hex[:12]}",
@@ -46,10 +48,12 @@ class EvidenceService:
             chain=chain,
             tx_hash=tx_hash,
             graph_path=graph_path,
+            matched_address=matched_address.lower() if matched_address else None,
             source=source,
             timestamp=timestamp,
             confidence=min(max(confidence, 0.0), 1.0),
             description=description,
+            limitations=list(limitations or []),
             provenance=Provenance(
                 created_at=datetime.now(timezone.utc).isoformat(),
                 created_by="attribution_engine",

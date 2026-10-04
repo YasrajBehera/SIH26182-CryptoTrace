@@ -86,16 +86,56 @@ class TestFullPipelineE2E:
             assert 0 <= c.score_breakdown.cluster_evidence <= 100
 
     def test_evidence_created_for_nonzero_scores(self):
+        """A wallet that IS a VASP directory address must produce evidence.
+
+        The synthetic seed's verified exchange address is used as the
+        investigated wallet so the evidence is attached to a real (demo-mode)
+        directory match rather than to a behavioural score that happens to be
+        positive for every VASP on the chain.
+        """
+        vasp_addr = "0xaabb000000000000000000000000000000000001"
         synth_txs = generate_transactions(seed=42, count=30)
-        addr = synth_txs[0].from_address
 
         pipeline = InvestigationPipeline()
         result = pipeline.run(
-            InvestigationRequest(address=addr, chain="eth"),
+            InvestigationRequest(address=vasp_addr, chain="eth"),
+            synth_txs=[
+                _transfer(
+                    transaction_hash=f"0x{running:064x}",
+                    from_address=vasp_addr,
+                    to_address="0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                )
+                for running in range(1, 6)
+            ]
+            + synth_txs,
+        )
+
+        assert result.candidates
+        top = result.candidates[0]
+        assert top.vasp_name == "SynthExchange_A"
+        assert top.evidence_ids, "a directory match must carry evidence"
+        assert result.evidence_count > 0
+
+    def test_wallet_with_no_vasp_link_is_not_ranked_against_every_vasp(self):
+        """Behavioural scores describe the wallet, not a (wallet, VASP) pair.
+
+        A wallet with no directory address and no transaction with a verified
+        VASP address must not be presented as a ranked candidate for VASPs it
+        merely shares a chain with.
+        """
+        synth_txs = generate_transactions(seed=42, count=30)
+
+        pipeline = InvestigationPipeline()
+        result = pipeline.run(
+            InvestigationRequest(
+                address=synth_txs[0].from_address, chain="eth"
+            ),
             synth_txs=synth_txs,
         )
 
-        assert result.evidence_count > 0
+        assert [c.vasp_name for c in result.candidates] == ["UNKNOWN"]
+        assert result.candidates[0].score == 0.0
+        assert result.candidates[0].evidence_ids == []
 
     def test_evidence_traceable_to_store(self):
         synth_txs = generate_transactions(seed=42, count=30)
@@ -190,8 +230,11 @@ class TestPipelineAPIEndpoint:
         assert "NOT proof" in data["disclaimer"]
 
     def test_analyze_unknown_wallet(self, app_client):
+        # A well-formed address that has no VASP match. The address is validated
+        # up front now, so this covers "unknown to the VASP dataset" rather than
+        # a malformed input (see test_analyze_rejects_malformed_address).
         resp = app_client.post(
-            "/api/v1/investigations/0xunknown/analyze",
+            "/api/v1/investigations/0xcccc000000000000000000000000000000000001/analyze",
             params={"chain": "eth"},
         )
         assert resp.status_code == 200

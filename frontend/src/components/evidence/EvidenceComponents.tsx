@@ -106,8 +106,16 @@ export function EvidenceCard({
               <span className="detail-label">Related wallet</span>
               <span className="detail-value">
                 <Link to={`/wallets/${encodeURIComponent(item.relatedWallet)}`} style={{ color: "var(--cyan)" }} title="Open wallet investigation">
-                  <Address address={item.relatedWallet} chain="eth" silent />
+                  <Address address={item.relatedWallet} chain={item.chain ?? "eth"} silent />
                 </Link>
+              </span>
+            </div>
+          ) : null}
+          {item.matchedAddress ? (
+            <div className="detail-row">
+              <span className="detail-label">Matched address</span>
+              <span className="detail-value">
+                <Address address={item.matchedAddress} chain={item.chain ?? "eth"} silent />
               </span>
             </div>
           ) : null}
@@ -140,6 +148,16 @@ export function EvidenceCard({
         </div>
       </div>
       {item.notes ? <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>{item.notes}</p> : null}
+      {item.limitations?.length ? (
+        <div className="card" style={{ background: "var(--bg-elevated)" }}>
+          <p className="card-title-sm" style={{ marginTop: 0 }}>What this evidence does NOT establish</p>
+          <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+            {item.limitations.map((note, i) => (
+              <li key={i}>{note}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </Card>
   );
 }

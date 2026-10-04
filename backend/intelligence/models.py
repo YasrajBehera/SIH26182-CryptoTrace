@@ -30,6 +30,16 @@ class VASPEntity(BaseModel):
 
 
 class VASPAddress(BaseModel):
+    """One VASP-controlled address, always scoped to exactly one chain.
+
+    ``chain`` is part of the identity, not metadata: the same 20-byte hex string
+    can belong to unrelated accounts on different EVM chains, so an entry is
+    only ever matched as ``(chain, address)``. Provenance fields
+    (:attr:`source_url`, :attr:`evidence`, :attr:`verification_tx_hash`) record
+    the public artefact the label was checked against so a match can be traced
+    back to a real, checkable source instead of asserted.
+    """
+
     address: str
     chain: str
     vasp_name: str
@@ -37,6 +47,16 @@ class VASPAddress(BaseModel):
     source: str = "synthetic"
     verification_status: VerificationStatus = VerificationStatus.UNVERIFIED
     confidence: float = Field(0.0, ge=0.0, le=1.0)
+    #: Public, human-checkable URL the label/address was verified against.
+    source_url: Optional[str] = None
+    #: Why this entry is considered verified, in plain words.
+    evidence: Optional[str] = None
+    #: A real on-chain transaction hash that demonstrates the entry's address is
+    #: an active, explorer-labelled account. This attests the LABEL only - it is
+    #: never evidence that any investigated wallet transacted with this address.
+    verification_tx_hash: Optional[str] = None
+    #: Block of :attr:`verification_tx_hash`, when known.
+    verification_block: Optional[int] = None
 
 
 class AddressIntelligence(BaseModel):
@@ -49,5 +69,10 @@ class AddressIntelligence(BaseModel):
     verification_status: Optional[str] = None
     confidence: float = 0.0
     source: Optional[str] = None
+    #: Public URL the matched label was verified against, when recorded.
+    source_url: Optional[str] = None
+    #: The VASP-controlled address that actually matched, on ``chain``.
+    #: ``address`` is the queried wallet; this is the counterparty label hit.
+    matched_address: Optional[str] = None
     is_known_vasp: bool = False
     all_matches: list[VASPAddress] = Field(default_factory=list)

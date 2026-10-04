@@ -33,8 +33,14 @@ class EvidenceRecord(BaseModel):
     chain: str
     tx_hash: Optional[str] = None
     graph_path: Optional[List[str]] = None
+    #: The counterparty/reference address this piece of evidence points at, when
+    #: the evidence is about a match rather than about the wallet itself. Always
+    #: interpreted together with :attr:`chain`; never treated as chain-agnostic.
+    matched_address: Optional[str] = None
     source: str = "synthetic"
     timestamp: Optional[int] = None
     confidence: float = Field(0.0, ge=0.0, le=1.0)
     description: str = ""
+    #: Evidence-specific caveats: what this record does NOT establish.
+    limitations: List[str] = Field(default_factory=list)
     provenance: Provenance

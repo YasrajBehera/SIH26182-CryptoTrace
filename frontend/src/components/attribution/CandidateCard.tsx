@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { AttributionCandidate } from "@/api/types";
 import { Card, Badge, DemoBadge, RiskBadge, Address, ConfidenceLevelBadge } from "@/components/ui";
 import { ConfidenceIndicator } from "@/components/ui/Confidence";
-import { formatDate } from "@/lib/format";
+import { formatDate, chainLabel } from "@/lib/format";
 
 const STATE_LABEL: Record<AttributionCandidate["state"], string> = {
   not_analyzed: "Not analyzed",
@@ -27,6 +27,9 @@ export function CandidateCard({ candidate }: { candidate: AttributionCandidate }
       title={
         <span className="row" style={{ gap: 8 }}>
           {candidate.vaspName}
+          <Badge className="status-open">
+            <span className="mono">{chainLabel(candidate.chain)}</span>
+          </Badge>
           {candidate.isDemo ? <DemoBadge /> : null}
         </span>
       }
@@ -38,7 +41,7 @@ export function CandidateCard({ candidate }: { candidate: AttributionCandidate }
           <div className="detail-row">
             <span className="detail-label">Wallet</span>
             <span className="detail-value">
-              <Address address={candidate.wallet} chain="eth" silent />
+              <Address address={candidate.wallet} chain={candidate.chain} silent />
             </span>
           </div>
           <div className="detail-row">

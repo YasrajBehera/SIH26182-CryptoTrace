@@ -253,8 +253,11 @@ class TestAdapterTransforms:
 
 class TestFullPipelineIntegration:
     def test_known_vasp_address_scores_high(self):
+        # A verified address from the synthetic seed, so the test exercises what
+        # its name claims: graph -> attribution -> evidence for a wallet that IS
+        # a known VASP address.
+        vasp_addr = "0xaabb000000000000000000000000000000000001"
         synth_txs = generate_transactions(seed=42, count=30)
-        vasp_addr = synth_txs[0].from_address
 
         graph = TransactionGraph()
         for tx in synth_txs:
@@ -265,6 +268,16 @@ class TestFullPipelineIntegration:
                 receiver_address=tx.to_address,
                 amount=__import__("decimal").Decimal(tx.value),
                 timestamp=tx.block_timestamp,
+            )
+        # Give the VASP address real activity in the graph.
+        for running in range(1, 6):
+            graph.add_edge(
+                chain=CHAIN,
+                tx_hash=f"0x{running:064x}",
+                sender_address=vasp_addr,
+                receiver_address="0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                amount=__import__("decimal").Decimal("1000"),
+                timestamp=1704067200 + running,
             )
 
         wallet_id = f"{CHAIN}:{vasp_addr.lower()}"

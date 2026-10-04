@@ -15,6 +15,8 @@ Address sources verified at time of writing:
   - BscScan public labels
   - Bitfinex's published wallet list:
     https://github.com/bitfinexcom/pub/blob/main/wallets.txt
+  - Ronin official block explorer (https://explorer.roninchain.com/) public
+    address labels
 """
 
 from intelligence.models import AddressType, VerificationStatus, VASPAddress, VASPEntity
@@ -35,7 +37,39 @@ _ENTITIES = [
     ("KuCoin", "exchange", "SC"),
     ("Gate.io", "exchange", "unknown"),
     ("HTX", "exchange", "unknown"),
+    ("Bitget", "exchange", "SG"),
 ]
+
+#: The one verified Ronin VASP address, with the public artefact it was checked
+#: against. Every field here is reproducible by a reviewer opening the explorer:
+#: the address page carries the "Bitget 5" label and links to bitget.com, and the
+#: recorded transaction is a successful, non-trivial RON transfer involving that
+#: labelled address. Re-checked against the live Ronin RPC (chain id 2020):
+#: eth_getTransactionByHash for that hash returns ``to`` = this address in block
+#: 61673529 for 2770.209067089073 RON from 0xfef6a5e5...06a49.
+#: No other Ronin VASP address is claimed, because no other one has been verified
+#: the same way. This attests the LABEL only: it is never evidence that any
+#: investigated wallet transacted with this address.
+BITGET_RONIN = VASPAddress(
+    address="0x5bdf85216ec1e38D6458C870992A69e38e03F7Ef",
+    chain="ronin",
+    vasp_name="Bitget",
+    address_type=AddressType.DEPOSIT,
+    source="ronin official explorer",
+    verification_status=VerificationStatus.VERIFIED,
+    confidence=0.90,
+    source_url="https://explorer.roninchain.com/",
+    evidence=(
+        "Official Ronin explorer labels the address as Bitget 5 and the "
+        "verified transaction demonstrates real activity involving the "
+        "labeled address: a transfer of 2770.209067089073 RON to this address "
+        "in block 61673529."
+    ),
+    verification_tx_hash=(
+        "0x733fc397a5a565a5f4ee16f15f420640a1a77982a87f12145634abf3e41ca8b2"
+    ),
+    verification_block=61_673_529,
+)
 
 # (address, chain, vasp_name, address_type, confidence, source)
 _ADDRESSES = [
@@ -128,4 +162,9 @@ def load_curated_vasp_directory() -> VASPRepository:
                 confidence=confidence,
             )
         )
+    # Verified Ronin coverage is added separately, and carries the full
+    # provenance of its verification. It is deliberately NOT mirrored on
+    # Ethereum: the same hex string is a different (and here unverified)
+    # account on mainnet.
+    repo.add_address(BITGET_RONIN)
     return repo

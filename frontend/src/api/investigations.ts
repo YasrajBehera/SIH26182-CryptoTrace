@@ -157,7 +157,12 @@ export const investigations = {
    * When an investigation/case id is provided it is bound to that case.
    * Stores the analysis_id in session context so downstream pages can reuse it.
    */
-  async analyze(address: string, chain = "eth", caseId?: string): Promise<InvestigationAnalysis> {
+  async analyze(
+    address: string,
+    chain = "eth",
+    caseId?: string,
+    mode: "live" | "demo" | "auto" = "live",
+  ): Promise<InvestigationAnalysis> {
     const trimmed = address.trim().toLowerCase();
 
     if (isDemoMode()) {
@@ -167,7 +172,10 @@ export const investigations = {
     const raw = await client.post<BackendInvestigationResult>(
       `/api/v1/investigations/${encodeURIComponent(trimmed)}/analyze`,
       undefined,
-      { query: { chain, ...(caseId ? { case_id: caseId } : {}) }, timeoutMs: 45000 },
+      {
+        query: { chain, mode, ...(caseId ? { case_id: caseId } : {}) },
+        timeoutMs: 45000,
+      },
     );
 
     let evidence: BackendEvidenceRecord[] = [];

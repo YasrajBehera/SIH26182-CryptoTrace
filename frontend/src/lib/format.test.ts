@@ -40,7 +40,11 @@ describe("format utils", () => {
   it("chainLabel maps known chains and falls back", () => {
     expect(chainLabel("eth")).toBe("Ethereum");
     expect(chainLabel("eth-mainnet")).toBe("Ethereum Mainnet");
-    expect(chainLabel("polygon")).toBe("polygon");
+    expect(chainLabel("ronin")).toBe("Ronin");
+    expect(chainLabel("ronin-mainnet")).toBe("Ronin");
+    expect(chainLabel("RONIN")).toBe("Ronin");
+    expect(chainLabel("polygon")).toBe("Polygon");
+    expect(chainLabel("not-a-chain")).toBe("not-a-chain");
     expect(chainLabel(null)).toBe("Unknown network");
   });
 

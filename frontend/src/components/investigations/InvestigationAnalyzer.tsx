@@ -5,6 +5,7 @@ import { CandidateCard } from "@/components/attribution/CandidateCard";
 import { EvidenceCard, ProvenanceChain } from "@/components/evidence/EvidenceComponents";
 import { GraphIcon, TraceIcon, TxIcon, EvidenceIcon } from "@/components/icons";
 import {
+  Address,
   Badge,
   Button,
   Card,
@@ -18,8 +19,13 @@ import {
   useToast,
 } from "@/components/ui";
 import { containsSecretMaterial, validateAddressInput } from "@/lib/address";
+import { SUPPORTED_CHAINS, type SupportedChainId } from "@/api/analysis";
 import { chainLabel, shortenAddress } from "@/lib/format";
 import type { InvestigationAnalysis, ProvenanceLink } from "@/api/types";
+
+function isSupportedChain(value: string): value is SupportedChainId {
+  return SUPPORTED_CHAINS.some((c) => c.id === value);
+}
 
 function humanize(value?: string | null): string {
   if (!value) return "—";
@@ -39,17 +45,20 @@ export function InvestigationAnalyzer() {
   const { push } = useToast();
   const [params, setParams] = useSearchParams();
   const urlAddress = params.get("address") ?? "";
+  const urlChain = params.get("chain") ?? "";
   const caseId = params.get("case") ?? "";
 
   const [address, setAddress] = useState(urlAddress);
+  const [chain, setChain] = useState<SupportedChainId>(isSupportedChain(urlChain) ? urlChain : "eth");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InvestigationAnalysis | null>(null);
 
   useEffect(() => {
     if (urlAddress && urlAddress !== address) setAddress(urlAddress);
+    if (urlChain && isSupportedChain(urlChain)) setChain(urlChain);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlAddress]);
+  }, [urlAddress, urlChain]);
 
   const addressProblem = address ? validateAddressInput(address) : null;
   const canRun = !running && !!address && !addressProblem;
@@ -74,13 +83,18 @@ export function InvestigationAnalyzer() {
     setRunning(true);
     setResult(null);
     try {
-      const analysis = await investigations.analyze(trimmed, "eth", caseId || undefined);
+      // mode="live": never silently substitute synthetic transactions for a
+      // real investigation. A provider failure surfaces as an error instead.
+      const analysis = await investigations.analyze(trimmed, chain, caseId || undefined, "live");
       setResult(analysis);
-      setParams({ address: trimmed, ...(caseId ? { case: caseId } : {}) }, { replace: true });
+      setParams(
+        { address: trimmed, chain, ...(caseId ? { case: caseId } : {}) },
+        { replace: true },
+      );
       push({
-        kind: "ok",
-        title: "Investigation complete",
-        description: `${analysis.candidates.length} candidate(s) · ${analysis.evidence.length} evidence record(s) returned by the backend.`,
+        kind: analysis.status === "DEMO" ? "warn" : "ok",
+        title: `Investigation complete — ${analysis.status.replace("_", " ")}`,
+        description: `${analysis.candidates.length} candidate(s) · ${analysis.evidence.length} evidence record(s) · ${analysis.provider || "no provider label"}`,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "The analysis service could not be reached.");
@@ -124,7 +138,9 @@ export function InvestigationAnalyzer() {
     links.push({
       id: "prov-source",
       label: "Attribution engine v0.1.0",
-      sublabel: "synthetic transaction pipeline",
+      sublabel: result.syntheticTransactions
+        ? "synthetic transaction pipeline"
+        : `live pipeline · ${result.provider || "provider unlabelled"}`,
       kind: "source",
     });
     return links;
@@ -153,6 +169,28 @@ export function InvestigationAnalyzer() {
               data-testid="analyze-address"
             />
           </Field>
+          <Field
+            label="Chain"
+            htmlFor="analysis-chain"
+          >
+            <select
+              id="analysis-chain"
+              className="input"
+              value={chain}
+              aria-label="Chain to investigate"
+              data-testid="analyze-chain"
+              onChange={(e) => {
+                setChain(e.target.value as SupportedChainId);
+                setError(null);
+              }}
+            >
+              {SUPPORTED_CHAINS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Button
             variant="primary"
             type="submit"
@@ -163,7 +201,9 @@ export function InvestigationAnalyzer() {
           </Button>
         </div>
         <p className="card-sub" style={{ margin: 0 }}>
-          Runs the backend pipeline over synthetic transactions (Ethereum): graph → VASP attribution → evidence.
+          Runs the backend pipeline in strict live mode on {chainLabel(chain)}: real chain data →
+          graph → VASP attribution → evidence. If live data is unavailable the request fails
+          instead of returning synthetic transactions.
         </p>
       </form>
 
@@ -182,13 +222,43 @@ export function InvestigationAnalyzer() {
           <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
             {result.isDemo ? (
               <DemoBadge label="DEMO RESULT — backend unreachable" />
-            ) : result.syntheticTransactions ? (
-              <DemoBadge label="SYNTHETIC TRANSACTIONS — backend pipeline" />
+            ) : result.status === "DEMO" ? (
+              <DemoBadge label="SYNTHETIC TRANSACTIONS — not real chain activity" />
+            ) : result.status === "NO_DATA" ? (
+              <Badge className="status-open">
+                NO_DATA — no activity found in the searched range
+              </Badge>
+            ) : result.status === "LIVE_PARTIAL" ? (
+              <Badge className="status-open">LIVE_PARTIAL — real data, incomplete coverage</Badge>
+            ) : (
+              <Badge className="status-live">LIVE — real chain data</Badge>
+            )}
+            {result.provider ? (
+              <Badge className="status-open">Provider: {result.provider}</Badge>
             ) : null}
             <Badge className="status-open">
               Analysis: {result.analysisId ?? "demo"}
             </Badge>
           </div>
+
+          {result.status === "DEMO" && result.liveStatus && result.liveStatus !== "DEMO" ? (
+            <div className="risk-rule rr-high" role="note" data-testid="live-status-note">
+              <strong>Live {chainLabel(result.chain)} data unavailable ({result.liveStatus}).</strong>{" "}
+              The rows below are synthetic demo data and prove nothing about this wallet.
+            </div>
+          ) : null}
+
+          {result.limitations.length ? (
+            <Card title="Coverage & limitations" subtitle="What this result does not include">
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {result.limitations.map((text) => (
+                  <li key={text} style={{ color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
+                    {text}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
 
           <div className="risk-rule rr-high" role="note">
             <strong>Attribution caveat:</strong> {result.disclaimer}
@@ -246,6 +316,18 @@ export function InvestigationAnalyzer() {
                     <span className="detail-label">Verification</span>
                     <span className="detail-value">{humanize(result.intelligence.verificationStatus)}</span>
                   </div>
+                  {result.intelligence.matchedAddress ? (
+                    <div className="detail-row">
+                      <span className="detail-label">Matched address</span>
+                      <span className="detail-value">
+                        <Address
+                          address={result.intelligence.matchedAddress}
+                          chain={result.intelligence.chain}
+                          silent
+                        />
+                      </span>
+                    </div>
+                  ) : null}
                   <div className="detail-row">
                     <span className="detail-label">Confidence / source</span>
                     <span className="detail-value">
@@ -253,6 +335,21 @@ export function InvestigationAnalyzer() {
                       {humanize(result.intelligence.source)}
                     </span>
                   </div>
+                  {result.intelligence.sourceUrl ? (
+                    <div className="detail-row">
+                      <span className="detail-label">Verified at</span>
+                      <span className="detail-value">
+                        <a
+                          href={result.intelligence.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: "var(--cyan)" }}
+                        >
+                          {result.intelligence.sourceUrl}
+                        </a>
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : (

@@ -2,9 +2,91 @@ from typing import Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+from blockchain.chains import canonical_chain, normalize_address
 from evidence.models import EvidenceType
 from evidence.service import EvidenceService
+from intelligence.models import VASPAddress
 from intelligence.repository import VASPRepository
+
+
+def observed_vasp_interactions(
+    vasp_repo: VASPRepository,
+    address: str,
+    chain: str,
+    graph_data: Optional[Dict] = None,
+) -> List[Tuple[VASPAddress, Dict, str]]:
+    """Transfers observed between ``address`` and a verified VASP address.
+
+    Every entry is read straight out of ingested flow data, so a VASP address can
+    only reach this list if the chain actually produced a transfer with it. The
+    directory lookup is chain-scoped, so a verified address on one chain can never
+    satisfy a match on another. Returns ``(directory_entry, flow, direction)``
+    tuples, de-duplicated per transaction hash and direction so a duplicated flow
+    cannot inflate an interaction count.
+    """
+    if not graph_data:
+        return []
+
+    canonical = canonical_chain(chain)
+    known = {
+        normalize_address(entry.address): entry
+        for entry in vasp_repo.get_known_vasp_addresses(canonical)
+    }
+    if not known:
+        return []
+
+    wallet = f"{canonical}:{normalize_address(address)}"
+    found: List[Tuple[VASPAddress, Dict, str]] = []
+    seen = set()
+
+    for flow in graph_data.get("flows") or []:
+        src = (flow.get("source") or flow.get("sender") or "").strip()
+        tgt = (flow.get("target") or flow.get("receiver") or "").strip()
+        if src == wallet:
+            counterpart, direction = tgt, "out"
+        elif tgt == wallet:
+            counterpart, direction = src, "in"
+        else:
+            continue
+        entry = known.get(normalize_address(counterpart.split(":", 1)[-1]))
+        if entry is None:
+            continue
+        key = ((flow.get("tx_hash") or "").strip(), direction, entry.address.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append((entry, flow, direction))
+
+    return found
+
+
+# Strength of an *indirect* verified-address signal, scaled by how much real
+# evidence supports it: more observed transfers with a verified address on the
+# same chain means a stronger association. Every tier is capped below a direct
+# directory hit, which is the strongest single piece of evidence available, so
+# observed interaction can never outrank an actual directory match.
+_VERIFIED_INTERACTION_TIERS = ((10, 60.0), (5, 45.0), (2, 30.0), (1, 15.0))
+
+
+def _verified_interaction_score(count: int) -> float:
+    for minimum, score in _VERIFIED_INTERACTION_TIERS:
+        if count >= minimum:
+            return score
+    return 0.0
+
+
+# The flow component answers a different question from the address component: not
+# "is this a VASP address" but "does this wallet move value with one". It is
+# therefore scaled separately, and a single observed transfer stays low here so
+# that one incidental transfer can never on its own lift a wallet into MEDIUM.
+_VERIFIED_FLOW_TIERS = ((10, 95.0), (5, 80.0), (2, 60.0), (1, 35.0))
+
+
+def _verified_flow_score(count: int) -> float:
+    for minimum, score in _VERIFIED_FLOW_TIERS:
+        if count >= minimum:
+            return score
+    return 0.0
 
 
 class ScoringWeights(BaseModel):
@@ -107,18 +189,48 @@ class AttributionScorer:
         self,
         address: str,
         chain: str,
+        graph_data: Optional[Dict] = None,
     ) -> Tuple[float, List[str]]:
+        """Evidence that this wallet is, or provably transacts with, a VASP.
+
+        Two kinds of real, chain-scoped evidence qualify, in strict precedence:
+
+        1. The wallet *is* a verified directory address on this chain. Scored at
+           the directory entry's own confidence.
+        2. Transfers were actually observed between this wallet and a verified
+           VASP address on this chain. Scored from the number of observed
+           interactions, and always below a direct directory hit.
+
+        Without the second case this component - the heaviest weight in the model
+        - returned ``0.0`` for every wallet that is not itself a directory entry,
+        which made the HIGH threshold unreachable no matter how much real
+        exchange activity the chain produced. A repeated, on-chain, verifiable
+        relationship with a verified VASP address is genuine address-match
+        evidence and belongs in this component.
+        """
         matches = self._vasp_repo.lookup_by_address(address, chain)
-        if not matches:
+        if matches:
+            best = max(matches, key=lambda m: m.confidence)
+            score = best.confidence * 100.0
+            explanations = [
+                f"Direct match: {best.vasp_name} ({best.address_type.value}, "
+                f"confidence={best.confidence:.2f})"
+            ]
+            return min(score, 100.0), explanations
+
+        observed = observed_vasp_interactions(
+            self._vasp_repo, address, chain, graph_data
+        )
+        if not observed:
             return 0.0, ["Address not found in VASP database"]
 
-        best = max(matches, key=lambda m: m.confidence)
-        score = best.confidence * 100.0
-        explanations = [
-            f"Direct match: {best.vasp_name} ({best.address_type.value}, "
-            f"confidence={best.confidence:.2f})"
+        names = sorted({entry.vasp_name for entry, _, _ in observed})
+        score = _verified_interaction_score(len(observed))
+        return score, [
+            f"Not a directory address, but {len(observed)} transfer(s) observed "
+            f"with verified {canonical_chain(chain)} address(es) of "
+            f"{', '.join(names)}; indirect, so scored below a direct directory match"
         ]
-        return min(score, 100.0), explanations
 
     def score_temporal_consistency(
         self,
@@ -205,6 +317,17 @@ class AttributionScorer:
 
         unique_count = len(unique_counterparties) or len(neighbors)
 
+        # No observed activity at all is NOT a weak exchange-like pattern, it is
+        # the absence of evidence. Awarding a positive score here (as the
+        # "few counterparties" tier used to) fabricated an attribution signal
+        # for wallets whose live fetch returned nothing, which produced ranked
+        # candidates and evidence records out of pure absence.
+        if not flows and not neighbors:
+            return 0.0, [
+                "No transaction activity was observed for this address; "
+                "flow-based scoring does not apply"
+            ]
+
         score = 0.0
         explanations: List[str] = []
 
@@ -234,6 +357,25 @@ class AttributionScorer:
             if ratio > 0.7:
                 score = min(score + 10, 100.0)
                 explanations.append("Balanced in/out flow (exchange-like)")
+
+        # Counterparty *count* alone cannot distinguish an exchange relationship
+        # from ordinary activity: a wallet with 50 unrelated counterparties scored
+        # identically to one with 50 counterparties including a verified VASP.
+        # When real transfers with a verified VASP address on this chain were
+        # observed, they are scored directly and take precedence over the
+        # aggregate count. With no VASP counterparty the aggregate tiers above are
+        # returned unchanged.
+        observed = observed_vasp_interactions(
+            self._vasp_repo, address, chain, graph_data
+        )
+        if observed:
+            names = sorted({entry.vasp_name for entry, _, _ in observed})
+            vasp_score = _verified_flow_score(len(observed))
+            score = min(max(score, vasp_score), 100.0)
+            explanations.append(
+                f"{len(observed)} transfer(s) observed with verified "
+                f"{canonical_chain(chain)} address(es) of {', '.join(names)}"
+            )
 
         if not explanations:
             explanations.append("Insufficient flow data for analysis")

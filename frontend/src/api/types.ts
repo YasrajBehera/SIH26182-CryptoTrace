@@ -318,6 +318,12 @@ export interface AttributionFactor {
 export interface AttributionCandidate {
   id: string;
   wallet: string;
+  /**
+   * Chain the investigation ran on. This is the analysed chain, not a default:
+   * the same address string on another chain is a different account, so the card
+   * must never label a Ronin result as Ethereum (or vice versa).
+   */
+  chain: string;
   vaspName: string;
   confidenceLevel: ConfidenceLevel;
   confidenceScore: number | null;
@@ -331,6 +337,8 @@ export interface AttributionCandidate {
   risk: RiskLevel;
   reasoning: string;
   factors: AttributionFactor[];
+  /** Evidence ids minted for this candidate, retrievable via the evidence API. */
+  evidenceIds?: string[];
   isDemo?: boolean;
 }
 
@@ -409,10 +417,17 @@ export interface EvidenceItem {
   relatedCandidate?: string;
   /** Chain the evidence was recorded against (backend EvidenceRecord.chain). */
   chain?: string;
+  /**
+   * The counterparty/reference address this record points at. Read together with
+   * `chain`: the same hex string on another chain is a different account.
+   */
+  matchedAddress?: string | null;
   /** Attribution/analysis id that generated the record. */
   analysisId?: string;
   /** Optionalevidence-native unix timestamp, when the record carries one. */
   timestamp?: number | null;
+  /** What this record does NOT establish. Rendered verbatim, never hidden. */
+  limitations?: string[];
   reliability: ReliabilityLevel;
   checksum?: string;
   notes?: string;
@@ -471,6 +486,10 @@ export interface BackendAddressIntelligence {
   verification_status: string | null;
   confidence: number;
   source: string | null;
+  /** Public URL the matched label was verified against, when recorded. */
+  source_url?: string | null;
+  /** The VASP-controlled address that actually matched, on `chain`. */
+  matched_address?: string | null;
   is_known_vasp: boolean;
   all_matches: BackendVaspMatch[];
 }
@@ -490,11 +509,19 @@ export interface BackendEvidenceRecord {
   chain: string;
   tx_hash: string | null;
   graph_path: string[] | null;
+  /**
+   * The counterparty/reference address this record points at, when the evidence
+   * is about a match rather than about the wallet itself. Always interpreted
+   * together with `chain`.
+   */
+  matched_address?: string | null;
   source: string;
   timestamp: number | null;
   /** Normalized 0–1 confidence backing this evidence record. */
   confidence: number;
   description: string;
+  /** What this record does NOT establish. Never empty for attribution evidence. */
+  limitations?: string[];
   provenance: BackendEvidenceProvenance;
   investigation_id?: string | null;
 }
@@ -512,6 +539,18 @@ export interface BackendInvestigationResult {
   disclaimer: string;
   case_id?: string | null;
   data_source?: string;
+  /** LIVE | LIVE_PARTIAL | NO_DATA | DEMO. */
+  status?: string;
+  /** Transport that actually served the data, e.g. "alchemy", "ronin-rpc". */
+  provider?: string;
+  /** Human-readable explanation of the run. */
+  message?: string;
+  /** Explicit statements of what this result does *not* cover. */
+  limitations?: string[];
+  /** Mode requested by the caller: "live" | "demo" | "auto". */
+  mode?: string;
+  /** Outcome of the live attempt, even when synthetic data was substituted. */
+  live_status?: string;
 }
 
 /** GET /api/v1/investigations/{id}/context — persisted investigation context. */
@@ -544,9 +583,25 @@ export interface AddressIntelligenceView {
   verificationStatus: string | null;
   confidence: number;
   source: string | null;
+  /** Public URL the matched label was verified against, when recorded. */
+  sourceUrl?: string;
+  /** The VASP-controlled address that actually matched, on `chain`. */
+  matchedAddress?: string;
   isKnownVasp: boolean;
   matchCount: number;
 }
+
+/**
+ * Investigation provenance, exactly as the backend reports it.
+ *
+ * - `LIVE`          real chain data.
+ * - `LIVE_PARTIAL`  real chain data that is knowingly incomplete.
+ * - `NO_DATA`       a provider answered and found no activity for the wallet
+ *                   *within the range it actually searched*. It is never a claim
+ *                   that the wallet is inactive; see `limitations`.
+ * - `DEMO`          synthetic transactions (explicitly requested or labelled fallback).
+ */
+export type AnalysisProvenance = "LIVE" | "LIVE_PARTIAL" | "NO_DATA" | "DEMO";
 
 export interface InvestigationAnalysis {
   address: string;
@@ -563,6 +618,14 @@ export interface InvestigationAnalysis {
   dataSource: "live" | "demo";
   /** True when the pipeline ran over synthetic transactions (data_source === "demo"). */
   syntheticTransactions: boolean;
+  /** Honest outcome of the run; never inferred from transfer counts. */
+  status: AnalysisProvenance;
+  /** Transport that served the data ("alchemy", "ronin-rpc", "synthetic"). */
+  provider: string;
+  /** Outcome of the live attempt, kept even when demo data was substituted. */
+  liveStatus: string;
+  /** Statements of what this result does not cover. */
+  limitations: string[];
   intelligence: AddressIntelligenceView | null;
   candidates: AttributionCandidate[];
   evidence: EvidenceItem[];

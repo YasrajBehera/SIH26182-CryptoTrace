@@ -11,6 +11,7 @@ import type {
   BackendScoreBreakdown,
   ConfidenceLevel,
   EvidenceItem,
+  AnalysisProvenance,
   InvestigationAnalysis,
   ReliabilityLevel,
 } from "./types";
@@ -96,6 +97,7 @@ export function mapBackendCandidateToView(
   return {
     id: candidateViewId(analysisId, index),
     wallet: candidate.address,
+    chain: candidate.chain,
     vaspName: candidate.vasp_name,
     confidenceLevel,
     confidenceScore: candidate.score,
@@ -112,6 +114,7 @@ export function mapBackendCandidateToView(
         ? candidate.explanation.join(" ")
         : "Candidate association identified by the attribution engine.",
     factors,
+    evidenceIds: [...candidate.evidence_ids],
     isDemo: false,
   };
 }
@@ -130,6 +133,8 @@ export function mapBackendIntelligenceToView(
     verificationStatus: intelligence.verification_status,
     confidence: intelligence.confidence,
     source: intelligence.source,
+    sourceUrl: intelligence.source_url ?? undefined,
+    matchedAddress: intelligence.matched_address ?? undefined,
     isKnownVasp: intelligence.is_known_vasp,
     matchCount: intelligence.all_matches?.length ?? 0,
   };
@@ -157,12 +162,36 @@ export function mapBackendEvidenceToItem(record: BackendEvidenceRecord): Evidenc
     relatedWallet: record.address ?? undefined,
     relatedTransaction: record.tx_hash ?? undefined,
     chain: record.chain ?? undefined,
+    matchedAddress: record.matched_address ?? undefined,
     analysisId: record.attribution_id ?? undefined,
     timestamp: record.timestamp ?? null,
+    limitations: record.limitations ?? [],
     reliability: evidenceReliability(record.confidence),
     notes: record.description || undefined,
     isDemo: synthetic,
   };
+}
+
+/** Chains the backend can investigate. Keep in step with `blockchain/chains.py`. */
+export const SUPPORTED_CHAINS = [
+  { id: "eth", label: "Ethereum" },
+  { id: "ronin", label: "Ronin" },
+] as const;
+
+export type SupportedChainId = (typeof SUPPORTED_CHAINS)[number]["id"];
+
+function toStatus(raw: BackendInvestigationResult): AnalysisProvenance {
+  switch (raw.status) {
+    case "LIVE":
+    case "LIVE_PARTIAL":
+    case "NO_DATA":
+    case "DEMO":
+      return raw.status;
+    default:
+      // Older backends only sent data_source; derive the status from it rather
+      // than defaulting to LIVE, which would overstate what is known.
+      return raw.data_source === "demo" ? "DEMO" : "LIVE";
+  }
 }
 
 export function mapInvestigationResult(
@@ -198,6 +227,10 @@ export function mapInvestigationResult(
     isDemo: false,
     dataSource,
     syntheticTransactions,
+    status: toStatus(raw),
+    provider: raw.provider ?? (syntheticTransactions ? "synthetic" : ""),
+    liveStatus: raw.live_status ?? "",
+    limitations: raw.limitations ?? [],
     intelligence: mapBackendIntelligenceToView(raw.address_intelligence),
     candidates,
     evidence: evidenceRecords.map(mapBackendEvidenceToItem),

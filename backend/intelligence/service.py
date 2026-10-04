@@ -65,6 +65,8 @@ class VASPIntelligenceService:
             verification_status=best.verification_status.value,
             confidence=best.confidence,
             source=best.source,
+            source_url=best.source_url,
+            matched_address=best.address,
             is_known_vasp=best.verification_status == VerificationStatus.VERIFIED,
             all_matches=matches,
         )

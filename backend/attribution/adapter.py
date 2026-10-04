@@ -11,6 +11,11 @@ def _normalize_flow(flow: Dict[str, Any]) -> Dict[str, Any]:
         "target": flow.get("target") or flow.get("receiver", ""),
         "amount": flow.get("amount", "0"),
         "timestamp": flow.get("timestamp") or flow.get("block_timestamp", 0),
+        # Retained so evidence can name the asset and the observed direction
+        # instead of describing an anonymous value movement.
+        "asset": flow.get("asset") or flow.get("token_symbol") or "",
+        "direction": flow.get("direction", ""),
+        "block_number": flow.get("block_number"),
     }
 
 
