@@ -20,7 +20,7 @@
 
 | 🚀 Resource | 🔗 Link | 📌 Description |
 |---|---|---|
-| 🌐 **Live CryptoTrace Platform** | **[Open Live Application](YOUR_NETLIFY_FRONTEND_URL)** | Investigator dashboard for wallet analysis, attribution, graph exploration and evidence |
+| 🌐 **Live CryptoTrace Platform** | **[Open Live Application](https://mellow-pothos-7a7b99.netlify.app)** | Investigator dashboard for wallet analysis, attribution, graph exploration and evidence |
 | ⚙️ **Live Backend API** | **[Render Backend](https://sih26182-cryptotrace.onrender.com)** | Production FastAPI backend powering CryptoTrace |
 | 💻 **GitHub Repository** | **[SIH26182-CryptoTrace](https://github.com/YasrajBehera/SIH26182-CryptoTrace)** | Complete frontend, backend, blockchain providers, attribution engine and tests |
 | 🤖 **AI-Narrated Project Demo** | **[Watch on YouTube](https://youtu.be/xp3hxlscSh4)** | Full narrated overview of CryptoTrace, its architecture, workflow and capabilities |
@@ -676,6 +676,7 @@ Final ownership or identity confirmation requires additional evidence such as ve
 <br>
 
 🎥 **[Full AI-Narrated Demo](https://youtu.be/xp3hxlscSh4)**  
+🌐 **Live CryptoTrace Platform** | **[Open Live Application](https://mellow-pothos-7a7b99.netlify.app)** |
 🔎 **[6-Minute Ronin Investigation](https://youtu.be/SRiYH3l_j14?si=OeOd8XtfT7QKN1rf)**  
 💻 **[GitHub Repository](https://github.com/YasrajBehera/SIH26182-CryptoTrace)**  
 ⚙️ **[Live Backend](https://sih26182-cryptotrace.onrender.com)**
